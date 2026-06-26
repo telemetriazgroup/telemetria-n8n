@@ -1,228 +1,231 @@
 # Fase 0 — Infraestructura y persistencia base
 
-**Objetivo:** dejar operativo el entorno donde correrá todo el sistema: n8n,
-PostgreSQL, reverse proxy, y las cuentas/API keys necesarias. Al cerrar esta fase
-debes poder conectarte a n8n desde el navegador, ejecutar un `SELECT 1` en Postgres
-desde un workflow, y tener un único punto de configuración parametrizable.
+**Objetivo:** dejar operativo el entorno de telemetría: n8n en **puerto 7001**
+(sin conflictuar con n8n existente en 5678), proxy inverso en **ztrack.app**
+bajo `/automatico/`, PostgreSQL de negocio, y credenciales base.
 
-**Prerrequisitos:** servidor Linux con Docker, dominio apuntando al servidor
-(ej. `ztrack.app`), acceso a Google Cloud Console y a Telegram.
+**Arquitectura:** ver [fase_0_implicancias.md](./fase_0_implicancias.md).
+
+| Servidor | Rol | Acceso |
+|----------|-----|--------|
+| `161.132.53.51` | Docker n8n telemetría + Postgres | `http://161.132.53.51:7001/automatico/` |
+| `ztrack.app` | Apache proxy inverso + SSL | `https://ztrack.app/automatico/` |
 
 **Siguiente fase:** [fase_1.md](./fase_1.md)
 
 ---
 
-## Paso 1 — Levantar n8n en Docker
+## Paso 1 — Servidor 161.132.53.51: levantar n8n (puerto 7001)
 
-### 1.1 Directorio y permisos
-
-```bash
-mkdir -p ~/n8n-data
-sudo chown -R 1000:1000 ~/n8n-data
-```
-
-n8n corre con UID `1000` dentro del contenedor; si el volumen no tiene ese
-ownership, fallan permisos al guardar workflows y credenciales.
-
-### 1.2 Contenedor
-
-Ejemplo mínimo (ajusta variables según tu entorno):
+### 1.1 Clonar repo y preparar entorno
 
 ```bash
-docker run -d \
-  --name n8n \
-  --restart unless-stopped \
-  -p 5678:5678 \
-  -v ~/n8n-data:/home/node/.n8n \
-  -e N8N_HOST="n8n.ztrack.app" \
-  -e N8N_PROTOCOL="https" \
-  -e WEBHOOK_URL="https://n8n.ztrack.app/" \
-  -e GENERIC_TIMEZONE="America/Lima" \
-  -e TZ="America/Lima" \
-  n8nio/n8n
+cd /opt/telemetria-n8n/infra    # o la ruta donde clonaste el repo
+cp .env.example .env
+# Revisa .env — valores por defecto ya apuntan a ztrack.app/automatico/
 ```
 
-### 1.3 Verificación
+### 1.2 Iniciar contenedor
 
-- Abre `http://<IP>:5678` (o el dominio tras el proxy) y completa el registro inicial.
-- Crea un workflow de prueba con un nodo **Manual Trigger** y ejecútalo.
+```bash
+chmod +x up.sh
+./up.sh
+```
+
+Equivalente manual:
+
+```bash
+docker compose up -d
+```
+
+El compose define:
+
+- Contenedor: `n8n-telemetria` (distinto del n8n en 5678)
+- Puerto host: **7001** → contenedor **5678**
+- Volumen: `n8n_telemetria_data` (datos aislados)
+- Subruta: `N8N_PATH=/automatico/`
+
+### 1.3 Verificación local (161.132.53.51)
+
+```bash
+curl -I http://127.0.0.1:7001/automatico/
+docker compose logs -f n8n-telemetria
+```
+
+Abre en navegador: `http://161.132.53.51:7001/automatico/` — debe aparecer
+setup o login de n8n.
+
+> Usa la IP solo para diagnóstico. OAuth y webhooks requieren la URL pública HTTPS.
+
+### 1.4 Firewall (recomendado)
+
+Permitir puerto **7001** solo desde la IP del servidor ztrack.app:
+
+```bash
+# Ejemplo ufw
+sudo ufw allow from <IP_SERVIDOR_ZTRACK> to any port 7001 proto tcp
+```
 
 ---
 
-## Paso 2 — Apache reverse proxy + WebSocket
+## Paso 2 — Servidor ztrack.app: proxy inverso Apache
 
-n8n necesita WebSocket para la UI. En Apache2:
+### 2.1 Instalar configuración
 
-```apache
-# /etc/apache2/sites-available/n8n.conf
-<VirtualHost *:443>
-    ServerName n8n.ztrack.app
-
-    SSLEngine on
-    # ... certificados SSL ...
-
-    ProxyPreserveHost On
-    ProxyPass / http://127.0.0.1:5678/
-    ProxyPassReverse / http://127.0.0.1:5678/
-
-    # WebSocket (crítico)
-    RewriteEngine On
-    RewriteCond %{HTTP:Upgrade} websocket [NC]
-    RewriteCond %{HTTP:Connection} upgrade [NC]
-    RewriteRule ^/?(.*) ws://127.0.0.1:5678/$1 [P,L]
-
-    ProxyPass /rest/push ws://127.0.0.1:5678/rest/push
-    ProxyPassReverse /rest/push ws://127.0.0.1:5678/rest/push
-</VirtualHost>
-```
-
-Habilitar módulos y sitio:
+En el servidor **ztrack.app**:
 
 ```bash
-sudo a2enmod proxy proxy_http proxy_wstunnel rewrite ssl
-sudo a2ensite n8n.conf
+sudo cp infra/apache-ztrack-automatico.conf /etc/apache2/sites-available/ztrack-automatico.conf
+sudo a2enmod proxy proxy_http proxy_wstunnel rewrite headers ssl
+sudo a2ensite ztrack-automatico.conf
+sudo apache2ctl configtest
 sudo systemctl reload apache2
 ```
 
-### Verificación
+Si ztrack.app ya tiene un VirtualHost `:443`, integra el bloque de
+`apache-ztrack-automatico.conf` dentro de ese vhost (ver comentarios al final
+del archivo).
 
-- Accede a `https://n8n.ztrack.app` — la UI debe cargar sin errores de conexión.
-- En la consola del navegador no deben aparecer fallos de WebSocket.
+### 2.2 Reglas proxy (referencia)
+
+```apache
+ProxyPass        /automatico/ http://161.132.53.51:7001/automatico/
+ProxyPassReverse /automatico/ http://161.132.53.51:7001/automatico/
+```
+
+Incluye WebSocket y cabeceras `X-Forwarded-Proto` / `X-Forwarded-Host`.
+Detalle completo: [fase_0_implicancias.md](./fase_0_implicancias.md).
+
+### 2.3 Verificación pública
+
+1. Abre `https://ztrack.app/automatico/`
+2. Completa el registro inicial de n8n (usuario admin)
+3. Consola del navegador **sin** errores WebSocket
 
 ---
 
 ## Paso 3 — PostgreSQL para el negocio
 
-Usa una base **separada** de la interna de n8n (o al menos un esquema propio).
+En el Postgres de `161.132.53.51` (o host acordado):
 
 ```bash
-# Ejemplo en el servidor Postgres
-sudo -u postgres psql <<'SQL'
-CREATE DATABASE telemetria;
-CREATE USER telemetria_app WITH PASSWORD 'CAMBIAR_PASSWORD';
-GRANT ALL PRIVILEGES ON DATABASE telemetria TO telemetria_app;
-SQL
+# Edita la contraseña en el SQL antes de ejecutar
+psql -h 127.0.0.1 -U postgres -f infra/postgres/01-telemetria-db.sql
 ```
 
-Más adelante aplicarás `schema.sql` en [fase_1.md](./fase_1.md). En F0 solo
-necesitas la base creada y accesible.
+Las tablas de trazabilidad (`email_trace`, etc.) se crean en **F1** con
+`schema.sql`.
 
 ### Verificación desde n8n
 
-1. **Credentials → Add credential → Postgres**
-2. Host, puerto, base `telemetria`, usuario y contraseña.
-3. Workflow de prueba: nodo **Postgres** → Operation **Execute Query** → `SELECT 1 AS ok`.
-4. Ejecutar y confirmar resultado `{ ok: 1 }`.
+1. `https://ztrack.app/automatico/` → **Credentials → Postgres**
+2. Host: `161.132.53.51` (o `host.docker.internal` / IP interna según red)
+3. Database: `telemetria`, User: `telemetria_app`
+4. Workflow prueba: **Postgres → Execute Query** → `SELECT 1 AS ok`
 
 ---
 
 ## Paso 4 — Google Cloud: OAuth2 para Gmail
 
-### 4.1 Proyecto y API
+### 4.1 APIs y consent screen
 
-1. [Google Cloud Console](https://console.cloud.google.com/) → crear o seleccionar proyecto.
-2. **APIs & Services → Library** → habilitar **Gmail API**.
-3. **OAuth consent screen** → configurar (tipo External o Internal según tu org).
-4. **Credentials → Create credentials → OAuth client ID** → tipo **Web application**.
+1. [Google Cloud Console](https://console.cloud.google.com/) → proyecto telemetría.
+2. Habilitar **Gmail API**.
+3. Configurar **OAuth consent screen**.
 
-### 4.2 Redirect URI (evitar `redirect_uri_mismatch`)
+### 4.2 Redirect URI (con subruta `/automatico/`)
 
-La URI debe coincidir **exactamente** con la que usa n8n:
+Registrar **exactamente**:
 
 ```
-https://n8n.ztrack.app/rest/oauth2-credential/callback
+https://ztrack.app/automatico/rest/oauth2-credential/callback
 ```
 
-Guarda **Client ID** y **Client Secret**.
+> Distinta del n8n en puerto 5678. Puedes usar la misma app OAuth con varias
+> redirect URIs o credenciales separadas.
 
 ### 4.3 Credencial en n8n
 
-1. **Credentials → Gmail OAuth2 API**
-2. Pega Client ID y Client Secret.
-3. Scope mínimo recomendado: `https://www.googleapis.com/auth/gmail.readonly`
-   (ampliar en F7 cuando se necesite enviar correos: `gmail.modify` o `gmail.send`).
-4. **Connect my account** → autoriza la cuenta Gmail de telemetría.
+1. `https://ztrack.app/automatico/` → **Credentials → Gmail OAuth2**
+2. Client ID + Client Secret
+3. Scope inicial: `https://www.googleapis.com/auth/gmail.readonly`
+4. **Connect my account**
 
 ### Verificación
 
-- En un workflow de prueba, nodo **Gmail → Get Many** con límite 1.
-- Debe devolver al menos un correo sin error de autenticación.
+Workflow prueba: **Gmail → Get Many**, límite 1 → debe devolver un correo.
 
 ---
 
 ## Paso 5 — Bot de Telegram
 
-### 5.1 Crear el bot
+1. [@BotFather](https://t.me/BotFather) → `/newbot` → guardar **token**
+2. Enviar mensaje al bot → `https://api.telegram.org/bot<TOKEN>/getUpdates` → anotar `chat.id`
+3. En n8n: **Credentials → Telegram API** → pegar token
 
-1. En Telegram, habla con [@BotFather](https://t.me/BotFather).
-2. `/newbot` → elige nombre y username.
-3. Guarda el **token** del bot.
-
-### 5.2 Obtener chat ID
-
-1. Envía un mensaje al bot desde el chat/grupo donde quieres recibir alertas.
-2. Consulta: `https://api.telegram.org/bot<TOKEN>/getUpdates`
-3. Anota `chat.id` (número, puede ser negativo en grupos).
-
-### 5.3 Credencial en n8n
-
-**Credentials → Telegram API** → pega el token.
-
-La integración real del bot ocurre en [fase_3.md](./fase_3.md); en F0 solo deja la
-credencial lista.
+Integración en workflows: [fase_3.md](./fase_3.md).
 
 ---
 
-## Paso 6 — Groq API (para F6, preparar ahora)
+## Paso 6 — Groq API (preparar para F6)
 
-1. Registro en [console.groq.com](https://console.groq.com/).
-2. Genera una **API Key**.
-3. En n8n: **Credentials → Header Auth** o credencial HTTP genérica con
-   `Authorization: Bearer <GROQ_API_KEY>`.
-
-No se usa hasta [fase_6.md](./fase_6.md), pero conviene tenerla desde F0.
+1. [console.groq.com](https://console.groq.com/) → API Key
+2. n8n: credencial **Header Auth** con `Authorization: Bearer <KEY>`
 
 ---
 
 ## Paso 7 — Nodo de configuración central
 
-Todo parámetro del sistema debe vivir en **un solo nodo Set** al inicio del
-workflow (ya presente en `workflow.json` como **Configuración**).
-
-Campos actuales y futuros:
+Parámetros del workflow en un único nodo **Set** (`workflow.json` → **Configuración**):
 
 | Campo | Fase | Descripción |
 |-------|------|-------------|
 | `mode` | F1 | `today` o `range` |
 | `startDate` / `endDate` | F1 | Rango de revisión |
-| `tzOffsetHours` | F1 | Offset horario (Lima = `-5`) |
+| `tzOffsetHours` | F1 | Lima = `-5` |
 | `keywordFilterEnabled` | F2 | Activar filtro |
 | `keywords` | F2 | `["Eusebio", "Luis", ...]` |
 | `telegramChatId` | F3 | Chat ID destino |
-| `restApiUrl` | F5 | URL endpoint aplicación |
-| `restApiToken` | F5 | Token/API key (mejor en credencial) |
+| `restApiUrl` | F5 | URL API gestión |
 | `groqModel` | F6 | ej. `llama-3.1-8b-instant` |
-| `autoReplyEnabled` | F7 | `false` hasta validar modo asistido |
+| `autoReplyEnabled` | F7 | `false` hasta validar asistido |
 
-**Regla:** no hardcodear URLs, tokens ni keywords en nodos sueltos.
+**Regla:** no hardcodear URLs ni tokens en nodos sueltos.
 
-### Verificación
+---
 
-- Abre el workflow importado y confirma que el nodo **Configuración** existe.
-- Cambia `mode` a `today` y ejecuta manualmente el flujo hasta **Construir consulta Gmail**;
-  debe generar `gmailQuery` con epoch del día actual.
+## Archivos de infraestructura en el repo
+
+```
+infra/
+├── docker-compose.yml              n8n telemetría :7001
+├── .env.example                    variables (N8N_PATH, WEBHOOK_URL, …)
+├── up.sh                           script de arranque
+├── apache-ztrack-automatico.conf   proxy en ztrack.app
+└── postgres/01-telemetria-db.sql   BD negocio
+```
 
 ---
 
 ## Checklist de cierre F0
 
-- [ ] n8n accesible por HTTPS en `ztrack.app` (o tu dominio)
-- [ ] WebSocket funcionando (UI estable)
-- [ ] Volumen Docker con ownership `1000:1000`
-- [ ] PostgreSQL `telemetria` creada; `SELECT 1` OK desde n8n
-- [ ] Credencial Gmail OAuth2 conectada
-- [ ] Credencial Telegram creada; chat ID anotado
-- [ ] API Key Groq guardada (para F6)
-- [ ] Nodo **Configuración** definido como punto único de parámetros
+### Servidor 161.132.53.51
+- [ ] `docker compose ps` → `n8n-telemetria` healthy
+- [ ] `http://161.132.53.51:7001/automatico/` responde
+- [ ] Puerto 7001 no interfiere con n8n en 5678
+- [ ] BD `telemetria` creada; `SELECT 1` OK desde n8n
 
-**Siguiente:** [fase_1.md](./fase_1.md) — importar workflow, crear tablas y trazabilidad.
+### Servidor ztrack.app
+- [ ] `https://ztrack.app/automatico/` carga UI completa
+- [ ] WebSocket OK (sin errores en consola)
+- [ ] ProxyPassReverse sin espacios en URL
+
+### Credenciales
+- [ ] Gmail OAuth2 con callback `/automatico/rest/oauth2-credential/callback`
+- [ ] Telegram token guardado
+- [ ] Groq API key guardada (F6)
+
+### Documentación
+- [ ] Leídas implicancias: [fase_0_implicancias.md](./fase_0_implicancias.md)
+
+**Siguiente:** [fase_1.md](./fase_1.md) — importar workflow, `schema.sql`, trazabilidad.

@@ -15,7 +15,8 @@ de fases se implementan siguiendo las guías paso a paso.
 | Documento | Contenido |
 |-----------|-----------|
 | [plan_fases_telemetria.md](./plan_fases_telemetria.md) | Visión, arquitectura, criterios de éxito y riesgos por fase |
-| [fase_0.md](./fase_0.md) | Infraestructura: n8n, Apache, PostgreSQL, cuentas OAuth |
+| [fase_0.md](./fase_0.md) | Infraestructura: n8n :7001, proxy `/automatico/`, PostgreSQL, OAuth |
+| [fase_0_implicancias.md](./fase_0_implicancias.md) | Topología, subruta, WebSocket, OAuth, riesgos |
 | [fase_1.md](./fase_1.md) | Lectura de Gmail, esquema BD, workflow base, anti-duplicados |
 | [fase_2.md](./fase_2.md) | Filtro por palabras clave configurable |
 | [fase_3.md](./fase_3.md) | Notificación por Telegram (MVP visible) |
@@ -43,7 +44,7 @@ F4 debe estar sólida antes de F5 (REST) y F7 (respuestas).
 
 | Fase | Entrega | En este repo | Guía |
 |------|---------|--------------|------|
-| F0 | Infraestructura y persistencia base | Parcial (config centralizada) | [fase_0.md](./fase_0.md) |
+| F0 | Infraestructura y persistencia base | Archivos en `infra/` | [fase_0.md](./fase_0.md) |
 | F1 | Lectura Gmail + anti-duplicados | **Implementado** | [fase_1.md](./fase_1.md) |
 | F2 | Filtro por keywords | Parcial (query Gmail, off por defecto) | [fase_2.md](./fase_2.md) |
 | F3 | Telegram MVP | Pendiente | [fase_3.md](./fase_3.md) |
@@ -67,8 +68,9 @@ Gmail API ──► n8n (orquestador) ──► Filtro keywords ──► Base d
                                    └──► Respuesta asistida vía Gmail (mismo Thread ID)
 ```
 
-**Stack base:** n8n self-hosted en Docker, Apache2 reverse proxy con
-`proxy_wstunnel`, dominio `ztrack.app`, Gmail OAuth2, bot de Telegram, Groq API.
+**Stack base:** n8n telemetría en `161.132.53.51:7001` (Docker), proxy Apache en
+`ztrack.app` bajo `/automatico/`, PostgreSQL, Gmail OAuth2, Telegram, Groq API.
+Convive con el n8n existente en puerto 5678 sin compartir volumen ni contenedor.
 
 ---
 
@@ -78,6 +80,13 @@ Gmail API ──► n8n (orquestador) ──► Filtro keywords ──► Base d
 telemetria-n8n/
 ├── plan_fases_telemetria.md        Plan estratégico (visión y riesgos)
 ├── fase_0.md … fase_8.md           Guías operativas paso a paso
+├── fase_0_implicancias.md          Topología 7001 + proxy /automatico/
+├── infra/                          Docker, Apache proxy, SQL F0
+│   ├── docker-compose.yml
+│   ├── .env.example
+│   ├── up.sh
+│   ├── apache-ztrack-automatico.conf
+│   └── postgres/01-telemetria-db.sql
 ├── schema.sql                      Esquema PostgreSQL (trazabilidad + referencias)
 ├── workflow.json                   Workflow de n8n importable (F1)
 ├── code-nodes/
@@ -91,12 +100,10 @@ telemetria-n8n/
 
 ## Inicio rápido (F0 + F1)
 
-Si ya tienes n8n y PostgreSQL operativos, sigue estas guías en orden:
-
-1. **[fase_0.md](./fase_0.md)** — Verificar infraestructura, credenciales y nodo de configuración.
-2. **[fase_1.md](./fase_1.md)** — Crear tablas, importar workflow, conectar Gmail y Postgres.
-
-Luego continúa con **[fase_2.md](./fase_2.md)** en adelante según el roadmap.
+1. **[fase_0_implicancias.md](./fase_0_implicancias.md)** — Leer topología y requisitos.
+2. **[fase_0.md](./fase_0.md)** — Levantar n8n en `161.132.53.51:7001`, proxy en
+   `https://ztrack.app/automatico/`, credenciales.
+3. **[fase_1.md](./fase_1.md)** — Crear tablas, importar workflow, conectar Gmail y Postgres.
 
 ---
 

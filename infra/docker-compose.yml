@@ -1,0 +1,42 @@
+# n8n telemetría — servidor 161.132.53.51, puerto host 7001
+# URL pública vía proxy: https://ztrack.app/automatico/
+#
+# Uso:
+#   cp .env.example .env
+#   docker compose up -d
+#   curl -I http://161.132.53.51:7001/automatico/
+
+services:
+  n8n-telemetria:
+    image: n8nio/n8n:latest
+    container_name: n8n-telemetria
+    restart: unless-stopped
+    ports:
+      # Host 7001 → contenedor 5678 (evita conflicto con n8n existente en 5678)
+      - "7001:5678"
+    volumes:
+      - n8n_telemetria_data:/home/node/.n8n
+    env_file:
+      - .env
+    environment:
+      # Refuerzo de variables críticas ( .env tiene prioridad si duplicadas )
+      N8N_HOST: ${N8N_HOST:-ztrack.app}
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-https}
+      N8N_PORT: ${N8N_PORT:-5678}
+      N8N_PATH: ${N8N_PATH:-/automatico/}
+      N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL:-https://ztrack.app/automatico/}
+      WEBHOOK_URL: ${WEBHOOK_URL:-https://ztrack.app/automatico/}
+      N8N_PROXY_HOPS: ${N8N_PROXY_HOPS:-1}
+      N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE:-true}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Lima}
+      TZ: ${TZ:-America/Lima}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/automatico/healthz || wget -qO- http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  n8n_telemetria_data:
+    name: n8n_telemetria_data

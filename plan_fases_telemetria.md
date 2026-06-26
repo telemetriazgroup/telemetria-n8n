@@ -3,7 +3,7 @@
 
 **Objetivo del plan:** llegar a un sistema totalmente integrado mediante etapas validables de forma independiente. Cada fase deja un incremento funcional y comprobable, de modo que ningún avance dependa de que "todo esté terminado" para probarse.
 
-**Guías operativas paso a paso:** [README.md](./README.md) · [fase_0.md](./fase_0.md) · [fase_1.md](./fase_1.md) · [fase_2.md](./fase_2.md) · [fase_3.md](./fase_3.md) · [fase_4.md](./fase_4.md) · [fase_5.md](./fase_5.md) · [fase_6.md](./fase_6.md) · [fase_7.md](./fase_7.md) · [fase_8.md](./fase_8.md)
+**Guías operativas paso a paso:** [README.md](./README.md) · [fase_0_implicancias.md](./fase_0_implicancias.md) · [fase_0.md](./fase_0.md) · [fase_1.md](./fase_1.md) · [fase_2.md](./fase_2.md) · [fase_3.md](./fase_3.md) · [fase_4.md](./fase_4.md) · [fase_5.md](./fase_5.md) · [fase_6.md](./fase_6.md) · [fase_7.md](./fase_7.md) · [fase_8.md](./fase_8.md)
 
 ---
 
