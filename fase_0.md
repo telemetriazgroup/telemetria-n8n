@@ -8,8 +8,8 @@ bajo `/automatico/`, PostgreSQL de negocio, y credenciales base.
 
 | Servidor | Rol | Acceso |
 |----------|-----|--------|
-| `161.132.53.51` | Docker n8n telemetría + Postgres | `http://161.132.53.51:7001/automatico/` |
-| `ztrack.app` | Apache proxy inverso + SSL | `https://ztrack.app/automatico/` |
+| `161.132.53.51` | Docker n8n en **raíz /** puerto 7001 | `http://161.132.53.51:7001/` |
+| `ztrack.app` | Proxy: `/automatico/` → `:7001/` | `https://ztrack.app/automatico/` |
 
 **Siguiente fase:** [fase_1.md](./fase_1.md)
 
@@ -42,20 +42,21 @@ El compose define:
 
 - Contenedor: `n8n-telemetria` (distinto del n8n en 5678)
 - Puerto host: **7001** → contenedor **5678**
-- Volumen: `n8n_telemetria_data` (datos aislados)
-- Subruta: `N8N_PATH=/automatico/`
+- Volumen: `n8n_telemetria_data`
+- n8n escucha en **raíz /** (sin subcarpeta en Docker)
 
 ### 1.3 Verificación local (161.132.53.51)
 
 ```bash
-curl -I http://127.0.0.1:7001/automatico/
+curl -I http://127.0.0.1:7001/
+curl -I http://127.0.0.1:7001/healthz
 docker compose logs -f n8n-telemetria
 ```
 
-Abre en navegador: `http://161.132.53.51:7001/automatico/` — debe aparecer
-setup o login de n8n.
+Debe aparecer `Editor is now accessible via: https://ztrack.app/automatico`.
 
-> Usa la IP solo para diagnóstico. OAuth y webhooks requieren la URL pública HTTPS.
+> **Navegador:** usa `https://ztrack.app/automatico/` (no `http://IP:7001/automatico/`).
+> La IP sirve en `/` para curl y diagnóstico; `/automatico/` solo existe en ztrack.app.
 
 ### 1.4 Firewall (recomendado)
 

@@ -54,56 +54,45 @@ escucha en 5678; el puerto 7001 es solo del host.
 
 ---
 
-## Implicancia 2 — Subruta `/automatico/` (N8N_PATH + strip-prefix)
+## Implicancia 2 — n8n en `/`, subruta solo en ztrack.app
 
-En **n8n 2.x** (tu versión: 2.27.4), `N8N_PATH` **no monta** las rutas del
-backend bajo `/automatico/`. El servidor sigue en la raíz:
-
-| Ruta en backend `:7001` | Resultado |
-|-------------------------|-----------|
-| `/` | 200 — UI |
-| `/static/base-path.js` | 200 — JavaScript |
-| `/automatico/` | **404** (normal) |
-| `/automatico/static/...` | **404** (normal) |
-
-`N8N_PATH` solo indica al **frontend** que genere URLs públicas con prefijo
-`/automatico/`. El proxy Apache debe **quitar** ese prefijo al reenviar.
-
-**Patrón oficial n8n** (igual que `n8n-hosting/subfolderWithSSL`):
+**Modelo acordado:**
 
 ```
-Browser   https://ztrack.app/automatico/static/foo.js
-Apache    http://161.132.53.51:7001/static/foo.js     ← sin /automatico/
+161.132.53.51:7001/              ← n8n (raíz, sin /automatico/)
+ztrack.app/automatico/*    →     161.132.53.51:7001/*   (Apache quita prefijo)
 ```
 
-**Variables obligatorias** (ver `infra/.env.example`):
+| Componente | Ruta |
+|------------|------|
+| Backend n8n | `/`, `/static/`, `/healthz`, `/rest/...` |
+| URL pública | `https://ztrack.app/automatico/` |
+| OAuth callback | `https://ztrack.app/automatico/rest/oauth2-credential/callback` |
 
-| Variable | Valor | Efecto |
-|----------|-------|--------|
-| `N8N_PATH` | `/automatico/` | Prefijo en URLs del frontend |
-| `N8N_EDITOR_BASE_URL` | `https://ztrack.app/automatico/` | URL base del editor |
-| `WEBHOOK_URL` | `https://ztrack.app/automatico/` | Webhooks públicos |
-| `N8N_HOST` | `ztrack.app` | Host público |
-| `N8N_PROTOCOL` | `https` | Esquema público |
-| `N8N_PROXY_HOPS` | `1` | Un salto de proxy |
+**En `.env` del contenedor** (solo URLs públicas, no rutas internas):
 
-**Apache — strip prefix (CORRECTO):**
+```env
+N8N_PATH=/automatico/
+N8N_EDITOR_BASE_URL=https://ztrack.app/automatico/
+WEBHOOK_URL=https://ztrack.app/automatico/
+```
+
+`N8N_PATH` le dice a la UI qué prefijo usar en enlaces cuando entras por
+ztrack.app. **No** monta `/automatico/` dentro del contenedor.
+
+**Apache en ztrack.app (strip-prefix):**
 
 ```apache
-ProxyPass        /automatico/ http://161.132.53.51:7001/
-ProxyPassReverse /automatico/ http://161.132.53.51:7001/
+<Location /automatico/>
+    ProxyPass        http://161.132.53.51:7001/
+    ProxyPassReverse http://161.132.53.51:7001/
+</Location>
 ```
 
-**Apache — forward con prefijo (INCORRECTO para n8n 2.x):**
-
 ```apache
-# ❌ Provoca 404 en backend y pantalla blanca
+# ❌ NO reenviar /automatico/ al backend
 ProxyPass /automatico/ http://161.132.53.51:7001/automatico/
 ```
-
-**No uses** `http://161.132.53.51:7001/automatico/` en el navegador para probar;
-`/automatico/` en el backend siempre dará 404. Prueba por
-`https://ztrack.app/automatico/` o, solo backend, `http://161.132.53.51:7001/`.
 
 ---
 

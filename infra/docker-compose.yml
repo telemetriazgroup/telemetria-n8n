@@ -1,10 +1,9 @@
-# n8n telemetría — servidor 161.132.53.51, puerto host 7001
-# URL pública vía proxy: https://ztrack.app/automatico/
+# n8n telemetría — 161.132.53.51:7001 (raíz /)
+# Público vía ztrack.app: https://ztrack.app/automatico/  → proxy strip-prefix
 #
-# Uso:
-#   cp .env.example .env
-#   docker compose up -d
-#   curl -I http://161.132.53.51:7001/automatico/
+#   cp .env.example .env && docker compose up -d
+#   curl -I http://127.0.0.1:7001/
+#   curl -I http://127.0.0.1:7001/healthz
 
 services:
   n8n-telemetria:
@@ -12,14 +11,12 @@ services:
     container_name: n8n-telemetria
     restart: unless-stopped
     ports:
-      # Host 7001 → contenedor 5678 (evita conflicto con n8n existente en 5678)
       - "7001:5678"
     volumes:
       - n8n_telemetria_data:/home/node/.n8n
     env_file:
       - .env
     environment:
-      # Refuerzo de variables críticas ( .env tiene prioridad si duplicadas )
       N8N_HOST: ${N8N_HOST:-ztrack.app}
       N8N_PROTOCOL: ${N8N_PROTOCOL:-https}
       N8N_PORT: ${N8N_PORT:-5678}

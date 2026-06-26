@@ -68,9 +68,9 @@ Gmail API ──► n8n (orquestador) ──► Filtro keywords ──► Base d
                                    └──► Respuesta asistida vía Gmail (mismo Thread ID)
 ```
 
-**Stack base:** n8n telemetría en `161.132.53.51:7001` (Docker), proxy Apache en
-`ztrack.app` bajo `/automatico/`, PostgreSQL, Gmail OAuth2, Telegram, Groq API.
-Convive con el n8n existente en puerto 5678 sin compartir volumen ni contenedor.
+**Stack base:** n8n telemetría en `161.132.53.51:7001/` (raíz), proxy en
+`ztrack.app` mapea `/automatico/` → `:7001/`, PostgreSQL, Gmail OAuth2, Telegram.
+Convive con el n8n existente en puerto 5678.
 
 ---
 
