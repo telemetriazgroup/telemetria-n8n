@@ -229,3 +229,179 @@ infra/
 - [ ] Leídas implicancias: [fase_0_implicancias.md](./fase_0_implicancias.md)
 
 **Siguiente:** [fase_1.md](./fase_1.md) — importar workflow, `schema.sql`, trazabilidad.
+
+---
+
+## Solución de problemas — `password authentication failed for user "n8n_telemetria"`
+
+### Causa
+
+En tu `infra/.env` están **activas** las variables `DB_TYPE=postgresdb` y
+`DB_POSTGRESDB_*`. n8n intenta usar PostgreSQL como base **interna** (workflows,
+credenciales guardadas en n8n), pero:
+
+- el usuario `n8n_telemetria` **no existe** en Postgres, o
+- la contraseña en `.env` **no coincide** con la del usuario en Postgres.
+
+Esto es **distinto** de la base `telemetria` / `telemetria_app` (negocio del flujo
+de correos). Son dos bases separadas.
+
+### Opción A — Recomendada para F0 (SQLite, más simple)
+
+1. Edita `infra/.env` y **comenta o elimina** todas las líneas `DB_*`:
+
+```bash
+# DB_TYPE=postgresdb
+# DB_POSTGRESDB_HOST=...
+# DB_POSTGRESDB_USER=n8n_telemetria
+# ...
+```
+
+2. Reinicia:
+
+```bash
+cd infra
+docker compose down
+docker compose up -d
+docker compose logs -f n8n-telemetria
+```
+
+n8n guardará sus datos en el volumen Docker (`n8n_telemetria_data`) con SQLite.
+Es suficiente para F0 y F1.
+
+### Opción B — Postgres interno de n8n (si lo necesitas)
+
+1. Crea usuario y BD en Postgres **antes** de levantar n8n:
+
+```bash
+# Edita la contraseña en el SQL y en .env — deben ser iguales
+psql -h 127.0.0.1 -U postgres -f postgres/02-n8n-internal-db.sql
+```
+
+2. En `infra/.env`, host accesible **desde el contenedor Docker**:
+
+```env
+DB_TYPE=postgresdb
+DB_POSTGRESDB_HOST=172.17.0.1
+DB_POSTGRESDB_PORT=5432
+DB_POSTGRESDB_DATABASE=n8n_telemetria
+DB_POSTGRESDB_USER=n8n_telemetria
+DB_POSTGRESDB_PASSWORD=la_misma_del_sql
+```
+
+3. Asegura que `pg_hba.conf` permita conexiones desde la red Docker (ej.
+`172.17.0.0/16`) con `md5` o `scram-sha-256`.
+
+4. Reinicia: `docker compose down && docker compose up -d`
+
+### Verificar que arrancó
+
+```bash
+curl -I http://127.0.0.1:7001/automatico/
+docker compose logs n8n-telemetria | tail -20
+# Debe decir "Editor is now accessible via..." sin "error initializing DB"
+```
+
+---
+
+## Solución de problemas — pantalla en blanco / MIME type `text/html` en JS y CSS
+
+### Síntoma
+
+Consola del navegador (tanto en `https://ztrack.app/automatico/` como en
+`http://161.132.53.51:7001/automatico/`):
+
+```
+Refused to apply style... MIME type ('text/html')
+Failed to load module script... server responded with MIME type of 'text/html'
+/automatico/static/base-path.js
+```
+
+### Diagnóstico: ¿Apache o n8n?
+
+| Prueba | Conclusión |
+|--------|------------|
+| Falla **solo** en ztrack.app | Proxy Apache mal configurado o otro vhost captura `/automatico/` |
+| Falla **también** en `161.132.53.51:7001` | **Problema en el contenedor n8n** (no es el proxy) |
+
+Si te pasa con la IP directa, el proxy de ztrack.app **no es la causa principal**.
+
+### Causa más probable
+
+El HTML de la UI carga, pero las peticiones a `/automatico/static/*.js` reciben
+**otra página HTML** (índice o error 404) en lugar de JavaScript. Eso ocurre cuando:
+
+1. **n8n no terminó de arrancar** — sigue el error de Postgres (`error initializing DB`
+   por `DB_*` en `.env`). El proceso muere y reinicia; las rutas estáticas no responden bien.
+2. **`N8N_PATH` incorrecto o vacío** — el HTML pide `/automatico/static/...` pero n8n
+   sirve los archivos en `/static/...` (sin prefijo). Cada `.js` devuelve HTML → pantalla blanca.
+3. **Volumen iniciado sin subruta** — se cambió `.env` después del primer arranque; conviene
+   recrear el contenedor (y en último caso borrar el volumen).
+
+### Pasos para corregir (en 161.132.53.51)
+
+**1. Ejecutar diagnóstico:**
+
+```bash
+cd infra
+chmod +x diagnose.sh
+./diagnose.sh
+```
+
+**2. Corregir `.env`** — mínimo necesario:
+
+```env
+N8N_HOST=ztrack.app
+N8N_PROTOCOL=https
+N8N_PORT=5678
+N8N_PATH=/automatico/
+N8N_EDITOR_BASE_URL=https://ztrack.app/automatico/
+WEBHOOK_URL=https://ztrack.app/automatico/
+N8N_PROXY_HOPS=1
+
+# IMPORTANTE: comentar TODAS las líneas DB_* hasta tener Postgres n8n creado
+# DB_TYPE=postgresdb
+```
+
+Comprueba que **no** exista `N8N_PATH=` vacío (anula el valor por defecto).
+
+**3. Recrear contenedor:**
+
+```bash
+docker compose down
+docker compose up -d --force-recreate
+docker compose logs -f n8n-telemetria
+```
+
+Espera en el log: **`Editor is now accessible via...`** (sin `error initializing DB`).
+
+**4. Validar Content-Type antes de abrir el navegador:**
+
+```bash
+curl -sI http://127.0.0.1:7001/automatico/static/base-path.js | grep -i content-type
+# Debe ser: application/javascript  o  text/javascript
+# Si dice text/html → sigue fallando N8N_PATH o n8n no está sano
+```
+
+**5. Probar en navegador:**
+
+- `http://161.132.53.51:7001/automatico/` → debe cargar UI
+- Luego `https://ztrack.app/automatico/` (tras proxy Apache)
+
+**6. Si persiste** — reset del volumen (solo F0, pierdes setup admin):
+
+```bash
+docker compose down
+docker volume rm n8n_telemetria_data
+docker compose up -d
+# Vuelve a registrar usuario en https://ztrack.app/automatico/
+```
+
+### Causa secundaria (solo ztrack.app)
+
+Si la IP funciona pero ztrack.app no, revisa en el **vhost activo** de ztrack.app:
+
+- El bloque `ProxyPass /automatico/` debe estar **antes** de cualquier `ProxyPass /` genérico.
+- No debe haber reglas SPA/fallback que devuelvan `index.html` para `/automatico/static/*`.
+- Usar el fragmento `<Location /automatico/>` de `infra/apache-ztrack-automatico.conf`
+  **dentro** del VirtualHost que ya sirve ztrack.app (no un segundo vhost duplicado).
