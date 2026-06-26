@@ -54,33 +54,56 @@ escucha en 5678; el puerto 7001 es solo del host.
 
 ---
 
-## Implicancia 2 — Subruta `/automatico/` (N8N_PATH)
+## Implicancia 2 — Subruta `/automatico/` (N8N_PATH + strip-prefix)
 
-n8n **no funciona** detrás de una subruta solo con ProxyPass. Requiere variables
-de entorno; sin ellas la UI carga assets en rutas incorrectas (`/assets/...`
-en lugar de `/automatico/assets/...`).
+En **n8n 2.x** (tu versión: 2.27.4), `N8N_PATH` **no monta** las rutas del
+backend bajo `/automatico/`. El servidor sigue en la raíz:
+
+| Ruta en backend `:7001` | Resultado |
+|-------------------------|-----------|
+| `/` | 200 — UI |
+| `/static/base-path.js` | 200 — JavaScript |
+| `/automatico/` | **404** (normal) |
+| `/automatico/static/...` | **404** (normal) |
+
+`N8N_PATH` solo indica al **frontend** que genere URLs públicas con prefijo
+`/automatico/`. El proxy Apache debe **quitar** ese prefijo al reenviar.
+
+**Patrón oficial n8n** (igual que `n8n-hosting/subfolderWithSSL`):
+
+```
+Browser   https://ztrack.app/automatico/static/foo.js
+Apache    http://161.132.53.51:7001/static/foo.js     ← sin /automatico/
+```
 
 **Variables obligatorias** (ver `infra/.env.example`):
 
 | Variable | Valor | Efecto |
 |----------|-------|--------|
-| `N8N_PATH` | `/automatico/` | Prefijo de todas las rutas internas |
+| `N8N_PATH` | `/automatico/` | Prefijo en URLs del frontend |
 | `N8N_EDITOR_BASE_URL` | `https://ztrack.app/automatico/` | URL base del editor |
-| `WEBHOOK_URL` | `https://ztrack.app/automatico/` | URL de webhooks (F3, F5, F7) |
+| `WEBHOOK_URL` | `https://ztrack.app/automatico/` | Webhooks públicos |
 | `N8N_HOST` | `ztrack.app` | Host público |
 | `N8N_PROTOCOL` | `https` | Esquema público |
-| `N8N_PROXY_HOPS` | `1` | Confía en un salto de proxy (Apache ztrack) |
+| `N8N_PROXY_HOPS` | `1` | Un salto de proxy |
 
-**Corrección al snippet original:** en `ProxyPassReverse` no debe haber espacio
-en la URL:
+**Apache — strip prefix (CORRECTO):**
 
 ```apache
-# ❌ Incorrecto (espacio antes de automatico)
-ProxyPassReverse /automatico/ http://161.132.53.51:7001/ automatico/
-
-# ✅ Correcto
-ProxyPassReverse /automatico/ http://161.132.53.51:7001/automatico/
+ProxyPass        /automatico/ http://161.132.53.51:7001/
+ProxyPassReverse /automatico/ http://161.132.53.51:7001/
 ```
+
+**Apache — forward con prefijo (INCORRECTO para n8n 2.x):**
+
+```apache
+# ❌ Provoca 404 en backend y pantalla blanca
+ProxyPass /automatico/ http://161.132.53.51:7001/automatico/
+```
+
+**No uses** `http://161.132.53.51:7001/automatico/` en el navegador para probar;
+`/automatico/` en el backend siempre dará 404. Prueba por
+`https://ztrack.app/automatico/` o, solo backend, `http://161.132.53.51:7001/`.
 
 ---
 

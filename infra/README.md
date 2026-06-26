@@ -14,16 +14,23 @@ cp .env.example .env
 curl -I http://127.0.0.1:7001/automatico/
 ```
 
-## Proxy (ztrack.app)
+## Proxy (ztrack.app) — strip-prefix obligatorio
 
-```bash
-sudo cp apache-ztrack-automatico.conf /etc/apache2/sites-available/ztrack-automatico.conf
-sudo a2enmod proxy proxy_http proxy_wstunnel rewrite headers ssl
-sudo a2ensite ztrack-automatico.conf
-sudo apache2ctl configtest && sudo systemctl reload apache2
+Integrar `<Location /automatico/>` del archivo `apache-ztrack-automatico.conf`
+**dentro** del VirtualHost `:443` existente de ztrack.app.
+
+```apache
+ProxyPass        http://161.132.53.51:7001/
+ProxyPassReverse http://161.132.53.51:7001/
 ```
 
-Verificar: https://ztrack.app/automatico/
+**No** usar `...7001/automatico/` en el backend.
+
+Verificar:
+
+```bash
+curl -sI https://ztrack.app/automatico/static/base-path.js | grep -i content-type
+```
 
 ## PostgreSQL
 

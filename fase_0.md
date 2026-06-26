@@ -86,21 +86,42 @@ Si ztrack.app ya tiene un VirtualHost `:443`, integra el bloque de
 `apache-ztrack-automatico.conf` dentro de ese vhost (ver comentarios al final
 del archivo).
 
-### 2.2 Reglas proxy (referencia)
+### 2.2 Reglas proxy (strip-prefix — obligatorio en n8n 2.x)
+
+Dentro del VirtualHost `:443` de ztrack.app:
 
 ```apache
-ProxyPass        /automatico/ http://161.132.53.51:7001/automatico/
-ProxyPassReverse /automatico/ http://161.132.53.51:7001/automatico/
+<Location /automatico/>
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Forwarded-Host "ztrack.app"
+    ProxyPreserveHost On
+
+    RewriteEngine On
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteCond %{HTTP:Connection} upgrade [NC]
+    RewriteRule ^/automatico/?(.*) ws://161.132.53.51:7001/$1 [P,L]
+
+    # Quita /automatico/ al reenviar — NO uses ...7001/automatico/
+    ProxyPass        http://161.132.53.51:7001/
+    ProxyPassReverse http://161.132.53.51:7001/
+</Location>
 ```
 
-Incluye WebSocket y cabeceras `X-Forwarded-Proto` / `X-Forwarded-Host`.
-Detalle completo: [fase_0_implicancias.md](./fase_0_implicancias.md).
+Archivo completo: `infra/apache-ztrack-automatico.conf`.
+
+> **Importante:** `http://161.132.53.51:7001/automatico/` dará 404 en el backend.
+> Eso es **normal**. La URL pública es `https://ztrack.app/automatico/`.
 
 ### 2.3 Verificación pública
 
+```bash
+# Desde cualquier máquina — Content-Type debe ser JavaScript, no HTML
+curl -sI https://ztrack.app/automatico/static/base-path.js | grep -i content-type
+```
+
 1. Abre `https://ztrack.app/automatico/`
 2. Completa el registro inicial de n8n (usuario admin)
-3. Consola del navegador **sin** errores WebSocket
+3. Consola del navegador **sin** errores WebSocket ni MIME `text/html`
 
 ---
 
@@ -306,102 +327,46 @@ docker compose logs n8n-telemetria | tail -20
 
 ## Solución de problemas — pantalla en blanco / MIME type `text/html` en JS y CSS
 
-### Síntoma
-
-Consola del navegador (tanto en `https://ztrack.app/automatico/` como en
-`http://161.132.53.51:7001/automatico/`):
+### Tu diagnóstico confirma el patrón n8n 2.x
 
 ```
-Refused to apply style... MIME type ('text/html')
-Failed to load module script... server responded with MIME type of 'text/html'
-/automatico/static/base-path.js
+/automatico/              → 404   ← normal en backend directo
+/automatico/static/...    → 404   ← normal en backend directo
+/static/base-path.js      → 200   ← backend sirve en raíz
+/                         → 200
 ```
 
-### Diagnóstico: ¿Apache o n8n?
+n8n **está sano**. El fallo es de **rutas**: el HTML pide `/automatico/static/...`
+pero el backend solo tiene `/static/...`. Apache debe **quitar** `/automatico/`
+al reenviar (strip-prefix).
 
-| Prueba | Conclusión |
-|--------|------------|
-| Falla **solo** en ztrack.app | Proxy Apache mal configurado o otro vhost captura `/automatico/` |
-| Falla **también** en `161.132.53.51:7001` | **Problema en el contenedor n8n** (no es el proxy) |
+### Corrección en ztrack.app
 
-Si te pasa con la IP directa, el proxy de ztrack.app **no es la causa principal**.
+Cambia el proxy de:
 
-### Causa más probable
+```apache
+# ❌ Incorrecto
+ProxyPass /automatico/ http://161.132.53.51:7001/automatico/
+```
 
-El HTML de la UI carga, pero las peticiones a `/automatico/static/*.js` reciben
-**otra página HTML** (índice o error 404) en lugar de JavaScript. Eso ocurre cuando:
+a:
 
-1. **n8n no terminó de arrancar** — sigue el error de Postgres (`error initializing DB`
-   por `DB_*` en `.env`). El proceso muere y reinicia; las rutas estáticas no responden bien.
-2. **`N8N_PATH` incorrecto o vacío** — el HTML pide `/automatico/static/...` pero n8n
-   sirve los archivos en `/static/...` (sin prefijo). Cada `.js` devuelve HTML → pantalla blanca.
-3. **Volumen iniciado sin subruta** — se cambió `.env` después del primer arranque; conviene
-   recrear el contenedor (y en último caso borrar el volumen).
+```apache
+# ✅ Correcto (dentro de <Location /automatico/>)
+ProxyPass        http://161.132.53.51:7001/
+ProxyPassReverse http://161.132.53.51:7001/
+```
 
-### Pasos para corregir (en 161.132.53.51)
-
-**1. Ejecutar diagnóstico:**
+Ver bloque completo en `infra/apache-ztrack-automatico.conf`, reload Apache, y:
 
 ```bash
-cd infra
-chmod +x diagnose.sh
-./diagnose.sh
+curl -sI https://ztrack.app/automatico/static/base-path.js | grep -i content-type
+# text/javascript
 ```
 
-**2. Corregir `.env`** — mínimo necesario:
+### No probar con IP + subruta
 
-```env
-N8N_HOST=ztrack.app
-N8N_PROTOCOL=https
-N8N_PORT=5678
-N8N_PATH=/automatico/
-N8N_EDITOR_BASE_URL=https://ztrack.app/automatico/
-WEBHOOK_URL=https://ztrack.app/automatico/
-N8N_PROXY_HOPS=1
+`http://161.132.53.51:7001/automatico/` **siempre** fallará (404). Usa:
 
-# IMPORTANTE: comentar TODAS las líneas DB_* hasta tener Postgres n8n creado
-# DB_TYPE=postgresdb
-```
-
-Comprueba que **no** exista `N8N_PATH=` vacío (anula el valor por defecto).
-
-**3. Recrear contenedor:**
-
-```bash
-docker compose down
-docker compose up -d --force-recreate
-docker compose logs -f n8n-telemetria
-```
-
-Espera en el log: **`Editor is now accessible via...`** (sin `error initializing DB`).
-
-**4. Validar Content-Type antes de abrir el navegador:**
-
-```bash
-curl -sI http://127.0.0.1:7001/automatico/static/base-path.js | grep -i content-type
-# Debe ser: application/javascript  o  text/javascript
-# Si dice text/html → sigue fallando N8N_PATH o n8n no está sano
-```
-
-**5. Probar en navegador:**
-
-- `http://161.132.53.51:7001/automatico/` → debe cargar UI
-- Luego `https://ztrack.app/automatico/` (tras proxy Apache)
-
-**6. Si persiste** — reset del volumen (solo F0, pierdes setup admin):
-
-```bash
-docker compose down
-docker volume rm n8n_telemetria_data
-docker compose up -d
-# Vuelve a registrar usuario en https://ztrack.app/automatico/
-```
-
-### Causa secundaria (solo ztrack.app)
-
-Si la IP funciona pero ztrack.app no, revisa en el **vhost activo** de ztrack.app:
-
-- El bloque `ProxyPass /automatico/` debe estar **antes** de cualquier `ProxyPass /` genérico.
-- No debe haber reglas SPA/fallback que devuelvan `index.html` para `/automatico/static/*`.
-- Usar el fragmento `<Location /automatico/>` de `infra/apache-ztrack-automatico.conf`
-  **dentro** del VirtualHost que ya sirve ztrack.app (no un segundo vhost duplicado).
+- Producción: `https://ztrack.app/automatico/`
+- Solo backend (sin UI completa): `http://161.132.53.51:7001/` + `./diagnose.sh`
