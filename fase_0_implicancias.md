@@ -252,8 +252,7 @@ No compartir volumen Docker entre ambas instancias.
 
 | Archivo | Propósito |
 |---------|-----------|
-| [infra/docker-compose.yml](./infra/docker-compose.yml) | n8n telemetría puerto 7001 |
-| [infra/.env.example](./infra/.env.example) | Variables de entorno |
-| [infra/apache-ztrack-automatico.conf](./infra/apache-ztrack-automatico.conf) | Proxy en servidor ztrack.app |
-| [infra/postgres/01-telemetria-db.sql](./infra/postgres/01-telemetria-db.sql) | Creación BD negocio |
+| [infra/docker-compose.yml](./infra/docker-compose.yml) | n8n :7001 + Postgres + Adminer :7901 |
+| [fase_0_implicancias_postgres_docker.md](./fase_0_implicancias_postgres_docker.md) | Implicancias BD en Docker |
+| [infra/apache-ztrack-automatico.conf](./infra/apache-ztrack-automatico.conf) | Proxy en ztrack.app |
 | [fase_0.md](./fase_0.md) | Guía operativa paso a paso |

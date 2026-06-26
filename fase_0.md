@@ -126,24 +126,73 @@ curl -sI https://ztrack.app/automatico/static/base-path.js | grep -i content-typ
 
 ---
 
-## Paso 3 — PostgreSQL para el negocio
+## Paso 3 — PostgreSQL de negocio (Docker + Adminer)
 
-En el Postgres de `161.132.53.51` (o host acordado):
+Incluido en `docker-compose.yml`: **no** hace falta instalar Postgres en el
+servidor host. Ver implicancias: [fase_0_implicancias_postgres_docker.md](./fase_0_implicancias_postgres_docker.md).
+
+### 3.1 Configurar contraseña
 
 ```bash
-# Edita la contraseña en el SQL antes de ejecutar
-psql -h 127.0.0.1 -U postgres -f infra/postgres/01-telemetria-db.sql
+cd infra
+cp .env.example .env
+nano .env   # TELEMETRIA_DB_PASSWORD=una_contraseña_segura
 ```
 
-Las tablas de trazabilidad (`email_trace`, etc.) se crean en **F1** con
-`schema.sql`.
+### 3.2 Levantar stack completo
 
-### Verificación desde n8n
+```bash
+docker compose up -d
+docker compose ps
+```
+
+Deben estar **Up (healthy):** `postgres-telemetria`, `n8n-telemetria`, `adminer-telemetria`.
+
+Al **primer** arranque, Postgres ejecuta `schema.sql` y crea `email_trace` y
+`email_attachment_ref` (listo para F1).
+
+### 3.3 Adminer — administración gráfica (:7901)
+
+Abre `http://161.132.53.51:7901` (restringir por firewall a IPs admin):
+
+| Campo | Valor |
+|-------|-------|
+| Sistema | PostgreSQL |
+| Servidor | `postgres-telemetria` |
+| Usuario | `telemetria_app` |
+| Contraseña | la de `TELEMETRIA_DB_PASSWORD` en `.env` |
+| Base de datos | `telemetria` |
+
+Debes ver las tablas `email_trace` y `email_attachment_ref`.
+
+> **Seguridad:** no expongas `:7901` a Internet. Usa firewall o túnel SSH.
+
+### 3.4 Credencial Postgres en n8n
 
 1. `https://ztrack.app/automatico/` → **Credentials → Postgres**
-2. Host: `161.132.53.51` (o `host.docker.internal` / IP interna según red)
-3. Database: `telemetria`, User: `telemetria_app`
-4. Workflow prueba: **Postgres → Execute Query** → `SELECT 1 AS ok`
+2. Configuración:
+
+| Campo | Valor |
+|-------|-------|
+| Host | `postgres-telemetria` |
+| Port | `5432` |
+| Database | `telemetria` |
+| User | `telemetria_app` |
+| Password | `TELEMETRIA_DB_PASSWORD` del `.env` |
+
+3. Workflow prueba: **Postgres → Execute Query** → `SELECT 1 AS ok`
+
+### SQLite vs PostgreSQL (recordatorio)
+
+| | SQLite (volumen n8n) | PostgreSQL (contenedor) |
+|--|----------------------|-------------------------|
+| Uso | Interno n8n | Correos trazados |
+| ¿F0? | Automático | Automático con compose |
+| UI | — | Adminer :7901 |
+
+### Instalación manual (alternativa)
+
+Solo si **no** usas Docker para Postgres: `infra/postgres/01-telemetria-db.sql` + `schema.sql`.
 
 ---
 
@@ -220,27 +269,33 @@ Parámetros del workflow en un único nodo **Set** (`workflow.json` → **Config
 
 ```
 infra/
-├── docker-compose.yml              n8n telemetría :7001
-├── .env.example                    variables (N8N_PATH, WEBHOOK_URL, …)
-├── up.sh                           script de arranque
-├── apache-ztrack-automatico.conf   proxy en ztrack.app
-└── postgres/01-telemetria-db.sql   BD negocio
+├── docker-compose.yml              n8n :7001 + Postgres + Adminer :7901
+├── .env.example
+├── up.sh
+├── diagnose.sh
+├── apache-ztrack-automatico.conf
+└── postgres/01-telemetria-db.sql   solo instalación manual sin Docker
 ```
+
+Implicancias Postgres Docker: [fase_0_implicancias_postgres_docker.md](./fase_0_implicancias_postgres_docker.md)
 
 ---
 
 ## Checklist de cierre F0
 
 ### Servidor 161.132.53.51
-- [ ] `docker compose ps` → `n8n-telemetria` healthy
-- [ ] `http://161.132.53.51:7001/automatico/` responde
+- [ ] `.env` con `TELEMETRIA_DB_PASSWORD` definido
+- [ ] `docker compose ps` → `postgres-telemetria`, `n8n-telemetria`, `adminer-telemetria` healthy
+- [ ] `http://127.0.0.1:7001/` responde (backend n8n)
+- [ ] Adminer `:7901` muestra tablas `email_trace` / `email_attachment_ref`
+- [ ] Credencial Postgres en n8n → `SELECT 1` OK (host `postgres-telemetria`)
 - [ ] Puerto 7001 no interfiere con n8n en 5678
-- [ ] BD `telemetria` creada; `SELECT 1` OK desde n8n
+- [ ] Firewall restringe `:7901` a IPs admin
 
 ### Servidor ztrack.app
 - [ ] `https://ztrack.app/automatico/` carga UI completa
 - [ ] WebSocket OK (sin errores en consola)
-- [ ] ProxyPassReverse sin espacios en URL
+- [ ] Proxy strip-prefix → `:7001/` (sin `/automatico/` en backend)
 
 ### Credenciales
 - [ ] Gmail OAuth2 con callback `/automatico/rest/oauth2-credential/callback`
@@ -248,9 +303,10 @@ infra/
 - [ ] Groq API key guardada (F6)
 
 ### Documentación
-- [ ] Leídas implicancias: [fase_0_implicancias.md](./fase_0_implicancias.md)
+- [ ] [fase_0_implicancias.md](./fase_0_implicancias.md) (proxy / puertos)
+- [ ] [fase_0_implicancias_postgres_docker.md](./fase_0_implicancias_postgres_docker.md) (BD)
 
-**Siguiente:** [fase_1.md](./fase_1.md) — importar workflow, `schema.sql`, trazabilidad.
+**Siguiente:** [fase_1.md](./fase_1.md) — importar workflow y trazabilidad.
 
 ---
 

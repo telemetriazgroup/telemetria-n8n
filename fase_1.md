@@ -13,27 +13,21 @@ workflow importado y operativo, trazabilidad verificable en BD.
 
 ---
 
-## Paso 1 — Crear el esquema en PostgreSQL
+## Paso 1 — Verificar esquema PostgreSQL
 
-Desde el servidor o tu máquina con acceso a Postgres:
+Con **Docker Compose** (F0), `schema.sql` ya se aplicó al primer `docker compose up`.
+Comprueba en Adminer (`http://161.132.53.51:7901`) o:
+
+```bash
+docker exec -it postgres-telemetria psql -U telemetria_app -d telemetria -c '\dt'
+```
+
+Deben existir `email_trace` y `email_attachment_ref`.
+
+**Solo si instalaste Postgres manualmente** (sin Docker):
 
 ```bash
 psql -h <host> -U telemetria_app -d telemetria -f schema.sql
-```
-
-El archivo `schema.sql` define:
-
-- **`email_trace`** — un registro por correo (solo texto).
-- **`email_attachment_ref`** — referencias de adjuntos (sin binarios).
-
-### Verificación
-
-```sql
-\dt
--- Deben aparecer email_trace y email_attachment_ref
-
-SELECT indexname FROM pg_indexes WHERE tablename = 'email_trace';
--- Debe existir restricción UNIQUE en message_id
 ```
 
 ---

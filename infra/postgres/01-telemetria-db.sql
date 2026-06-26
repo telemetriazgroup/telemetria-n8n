@@ -1,10 +1,7 @@
--- Fase 0 — Base de datos de negocio (telemetría)
--- Ejecutar en PostgreSQL del servidor 161.132.53.51 (o host acordado)
+-- Instalación MANUAL de PostgreSQL (solo si NO usas docker-compose)
+-- Con Docker, postgres-telemetria + schema.sql se crean solos al primer up.
 --
 --   psql -h 127.0.0.1 -U postgres -f infra/postgres/01-telemetria-db.sql
---
--- Cambia CAMBIAR_PASSWORD antes de ejecutar.
--- Luego aplicar tablas de trazabilidad (F1):
 --   psql -h 127.0.0.1 -U telemetria_app -d telemetria -f schema.sql
 
 SELECT 'CREATE DATABASE telemetria'

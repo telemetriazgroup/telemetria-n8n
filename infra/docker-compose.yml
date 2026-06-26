@@ -1,11 +1,51 @@
-# n8n telemetría — 161.132.53.51:7001 (raíz /)
-# Público vía ztrack.app: https://ztrack.app/automatico/  → proxy strip-prefix
+# Stack telemetría — 161.132.53.51
+#   n8n        → :7001  (raíz /)
+#   Adminer    → :7901  (UI PostgreSQL)
+#   Postgres   → solo red Docker (sin puerto público)
 #
 #   cp .env.example .env && docker compose up -d
-#   curl -I http://127.0.0.1:7001/
-#   curl -I http://127.0.0.1:7001/healthz
+
+networks:
+  telemetria-net:
+    name: telemetria-net
 
 services:
+  postgres-telemetria:
+    image: postgres:16-alpine
+    container_name: postgres-telemetria
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: telemetria
+      POSTGRES_USER: telemetria_app
+      POSTGRES_PASSWORD: ${TELEMETRIA_DB_PASSWORD:?Define TELEMETRIA_DB_PASSWORD en .env}
+      TZ: ${TZ:-America/Lima}
+    volumes:
+      - postgres_telemetria_data:/var/lib/postgresql/data
+      # Tablas email_trace / email_attachment_ref al primer arranque
+      - ../schema.sql:/docker-entrypoint-initdb.d/02-schema.sql:ro
+    networks:
+      - telemetria-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U telemetria_app -d telemetria"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  adminer-telemetria:
+    image: adminer:4
+    container_name: adminer-telemetria
+    restart: unless-stopped
+    ports:
+      - "7901:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres-telemetria
+    networks:
+      - telemetria-net
+    depends_on:
+      postgres-telemetria:
+        condition: service_healthy
+
   n8n-telemetria:
     image: n8nio/n8n:latest
     container_name: n8n-telemetria
@@ -27,6 +67,17 @@ services:
       N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE:-true}
       GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Lima}
       TZ: ${TZ:-America/Lima}
+      # Referencia para credenciales n8n (no las crea automáticamente)
+      TELEMETRIA_DB_HOST: postgres-telemetria
+      TELEMETRIA_DB_PORT: "5432"
+      TELEMETRIA_DB_NAME: telemetria
+      TELEMETRIA_DB_USER: telemetria_app
+      TELEMETRIA_DB_PASSWORD: ${TELEMETRIA_DB_PASSWORD}
+    networks:
+      - telemetria-net
+    depends_on:
+      postgres-telemetria:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz || exit 1"]
       interval: 30s
@@ -37,3 +88,5 @@ services:
 volumes:
   n8n_telemetria_data:
     name: n8n_telemetria_data
+  postgres_telemetria_data:
+    name: postgres_telemetria_data

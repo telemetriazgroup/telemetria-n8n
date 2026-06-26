@@ -17,6 +17,7 @@ de fases se implementan siguiendo las guías paso a paso.
 | [plan_fases_telemetria.md](./plan_fases_telemetria.md) | Visión, arquitectura, criterios de éxito y riesgos por fase |
 | [fase_0.md](./fase_0.md) | Infraestructura: n8n :7001, proxy `/automatico/`, PostgreSQL, OAuth |
 | [fase_0_implicancias.md](./fase_0_implicancias.md) | Topología, subruta, WebSocket, OAuth, riesgos |
+| [fase_0_implicancias_postgres_docker.md](./fase_0_implicancias_postgres_docker.md) | Postgres + Adminer en Docker (:7901) |
 | [fase_1.md](./fase_1.md) | Lectura de Gmail, esquema BD, workflow base, anti-duplicados |
 | [fase_2.md](./fase_2.md) | Filtro por palabras clave configurable |
 | [fase_3.md](./fase_3.md) | Notificación por Telegram (MVP visible) |
@@ -44,7 +45,7 @@ F4 debe estar sólida antes de F5 (REST) y F7 (respuestas).
 
 | Fase | Entrega | En este repo | Guía |
 |------|---------|--------------|------|
-| F0 | Infraestructura y persistencia base | Archivos en `infra/` | [fase_0.md](./fase_0.md) |
+| F0 | Infraestructura y persistencia base | Stack Docker completo | [fase_0.md](./fase_0.md) |
 | F1 | Lectura Gmail + anti-duplicados | **Implementado** | [fase_1.md](./fase_1.md) |
 | F2 | Filtro por keywords | Parcial (query Gmail, off por defecto) | [fase_2.md](./fase_2.md) |
 | F3 | Telegram MVP | Pendiente | [fase_3.md](./fase_3.md) |
@@ -68,9 +69,8 @@ Gmail API ──► n8n (orquestador) ──► Filtro keywords ──► Base d
                                    └──► Respuesta asistida vía Gmail (mismo Thread ID)
 ```
 
-**Stack base:** n8n telemetría en `161.132.53.51:7001/` (raíz), proxy en
-`ztrack.app` mapea `/automatico/` → `:7001/`, PostgreSQL, Gmail OAuth2, Telegram.
-Convive con el n8n existente en puerto 5678.
+**Stack base:** n8n `:7001`, PostgreSQL y Adminer `:7901` en Docker (`161.132.53.51`),
+proxy `ztrack.app/automatico/` → `:7001/`, SQLite interno de n8n en volumen Docker.
 
 ---
 
@@ -81,7 +81,7 @@ telemetria-n8n/
 ├── plan_fases_telemetria.md        Plan estratégico (visión y riesgos)
 ├── fase_0.md … fase_8.md           Guías operativas paso a paso
 ├── fase_0_implicancias.md          Topología 7001 + proxy /automatico/
-├── infra/                          Docker, Apache proxy, SQL F0
+├── infra/                          Docker: n8n :7001, Postgres, Adminer :7901
 │   ├── docker-compose.yml
 │   ├── .env.example
 │   ├── up.sh
