@@ -1,0 +1,303 @@
+{
+  "name": "Telemetria - Trazabilidad de correos (base)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Programar revisión",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -160,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "mode",
+              "value": "today",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "startDate",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "endDate",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "tzOffsetHours",
+              "value": -5,
+              "type": "number"
+            },
+            {
+              "id": "c5",
+              "name": "keywordFilterEnabled",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "c6",
+              "name": "keywords",
+              "value": "={{ [\"Eusebio\", \"Luis\"] }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-config",
+      "name": "Configuración",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        60,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Construir consulta Gmail (modo \"today\" / \"range\") ───────────────────────\n// Lee la configuración del nodo \"Configuración\" y arma el parámetro de búsqueda\n// `q` de Gmail usando timestamps epoch en segundos, para evitar ambigüedad de\n// zona horaria (el contenedor de n8n suele estar en UTC; Lima es UTC-5).\n//\n//   mode = \"today\" -> correos del día de hoy (en la zona horaria configurada)\n//   mode = \"range\" -> correos entre startDate y endDate (ambos inclusive)\n\nconst cfg = $input.first().json;\n\nconst tzOffset = Number(cfg.tzOffsetHours ?? -5);          // Lima = -5\nconst mode = String(cfg.mode || 'today').toLowerCase();\n\n// epoch (segundos) del inicio del día local para una fecha \"wall clock\" local\nfunction startOfDayEpoch(y, monthIndex, d) {\n  return Math.floor(Date.UTC(y, monthIndex, d, 0, 0, 0) / 1000) - tzOffset * 3600;\n}\n\nlet afterEpoch, beforeEpoch;\n\nif (mode === 'range') {\n  if (!cfg.startDate || !cfg.endDate) {\n    throw new Error('El modo \"range\" requiere startDate y endDate en formato YYYY-MM-DD.');\n  }\n  const [sy, sm, sd] = String(cfg.startDate).split('-').map(Number);\n  const [ey, em, ed] = String(cfg.endDate).split('-').map(Number);\n  afterEpoch  = startOfDayEpoch(sy, sm - 1, sd);\n  beforeEpoch = startOfDayEpoch(ey, em - 1, ed) + 86400;  // incluye el endDate completo\n} else {\n  // today, en la zona horaria configurada\n  const localMs = Date.now() + tzOffset * 3600 * 1000;\n  const ld = new Date(localMs);\n  afterEpoch  = startOfDayEpoch(ld.getUTCFullYear(), ld.getUTCMonth(), ld.getUTCDate());\n  beforeEpoch = afterEpoch + 86400;\n}\n\nlet q = `after:${afterEpoch} before:${beforeEpoch}`;\n\n// Filtro opcional por palabras clave (configurable y ampliable)\nif (cfg.keywordFilterEnabled && Array.isArray(cfg.keywords) && cfg.keywords.length) {\n  const kw = cfg.keywords.map(k => `\"${k}\"`).join(' OR ');\n  q += ` (${kw})`;\n}\n\nreturn [{\n  json: {\n    gmailQuery: q,\n    reviewMode: mode,\n    afterEpoch,\n    beforeEpoch,\n    afterIso:  new Date(afterEpoch  * 1000).toISOString(),\n    beforeIso: new Date(beforeEpoch * 1000).toISOString()\n  }\n}];\n"
+      },
+      "id": "node-buildquery",
+      "name": "Construir consulta Gmail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": true,
+        "simple": false,
+        "filters": {
+          "q": "={{ $json.gmailQuery }}"
+        },
+        "options": {
+          "downloadAttachments": false
+        }
+      },
+      "id": "node-gmail",
+      "name": "Leer Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Normalizar correo (SOLO texto + REFERENCIAS de adjuntos) ────────────────\n// Requiere que el nodo Gmail use \"Simplify = OFF\" para recibir el payload\n// completo (con payload.headers y payload.parts).\n//\n// Produce, por cada correo, un item con:\n//   • claves = columnas de email_trace (solo texto)\n//   • attachments[] = referencias de adjuntos (sin binarios) para el siguiente nodo\n//\n// Los binarios NUNCA se descargan ni almacenan. De cada adjunto se guarda\n// filename + attachmentId + enlace al correo, para ubicarlo luego en Gmail.\n\nconst qinfo = $('Construir consulta Gmail').first().json;\nconst out = [];\n\nfunction headerVal(payload, name) {\n  if (!payload || !Array.isArray(payload.headers)) return '';\n  const h = payload.headers.find(x => (x.name || '').toLowerCase() === name.toLowerCase());\n  return h ? h.value : '';\n}\n\nfunction decodeB64Url(data) {\n  if (!data) return '';\n  const b64 = data.replace(/-/g, '+').replace(/_/g, '/');\n  try { return Buffer.from(b64, 'base64').toString('utf-8'); } catch (e) { return ''; }\n}\n\nfunction stripHtml(html) {\n  return html\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfor (const item of $input.all()) {\n  const m = item.json;\n  const payload = m.payload || {};\n\n  let textPlain = '';\n  let textHtml = '';\n  const attachments = [];\n\n  function walk(part) {\n    if (!part) return;\n    const mime = part.mimeType || '';\n    const filename = part.filename || '';\n\n    if (filename && filename.length > 0) {\n      // Adjunto -> SOLO referencia (sin binario)\n      attachments.push({\n        filename,\n        mime_type: mime,\n        size_bytes: (part.body && part.body.size) || 0,\n        attachment_id: (part.body && part.body.attachmentId) || ''\n      });\n    } else if (mime === 'text/plain' && part.body && part.body.data) {\n      textPlain += decodeB64Url(part.body.data);\n    } else if (mime === 'text/html' && part.body && part.body.data) {\n      textHtml += decodeB64Url(part.body.data);\n    }\n    if (Array.isArray(part.parts)) part.parts.forEach(walk);\n  }\n  walk(payload);\n\n  let bodyText = textPlain.trim();\n  if (!bodyText && textHtml) bodyText = stripHtml(textHtml);\n  if (!bodyText) bodyText = m.snippet || '';\n\n  // Fecha: preferir internalDate (epoch ms); si no, header Date\n  let emailDateIso = null;\n  if (m.internalDate) {\n    const d = new Date(Number(m.internalDate));\n    if (!isNaN(d.getTime())) emailDateIso = d.toISOString();\n  }\n  if (!emailDateIso) {\n    const d = new Date(headerVal(payload, 'Date'));\n    if (!isNaN(d.getTime())) emailDateIso = d.toISOString();\n  }\n\n  const messageId = m.id;\n  const gmailLink = `https://mail.google.com/mail/u/0/#all/${messageId}`;\n\n  out.push({\n    json: {\n      // ── columnas de email_trace ──\n      message_id:      messageId,\n      thread_id:       m.threadId,\n      from_address:    headerVal(payload, 'From'),\n      to_addresses:    headerVal(payload, 'To'),\n      cc_addresses:    headerVal(payload, 'Cc'),\n      subject:         headerVal(payload, 'Subject'),\n      email_date:      emailDateIso,\n      body_text:       bodyText,\n      snippet:         m.snippet || '',\n      has_attachments: attachments.length > 0,\n      gmail_link:      gmailLink,\n      search_query:    qinfo.gmailQuery,\n      review_mode:     qinfo.reviewMode,\n      // ── auxiliar para \"Expandir adjuntos\" (lo ignora el insert de trazabilidad) ──\n      attachments\n    }\n  });\n}\n\nreturn out;\n"
+      },
+      "id": "node-normalize",
+      "name": "Normalizar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "mode": "name",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "name",
+          "value": "email_trace"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "message_id"
+          ]
+        },
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "id": "node-insert-trace",
+      "name": "Guardar trazabilidad",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        960,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REEMPLAZAR",
+          "name": "Postgres telemetria"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Expandir adjuntos (una fila por referencia de adjunto) ──────────────────\n// Toma la salida del normalizador y emite un item por cada adjunto, con las\n// claves = columnas de email_attachment_ref. Si el correo no tiene adjuntos,\n// no emite nada para ese correo.\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const m = item.json;\n  const atts = Array.isArray(m.attachments) ? m.attachments : [];\n  for (const a of atts) {\n    out.push({\n      json: {\n        message_id:    m.message_id,\n        thread_id:     m.thread_id,\n        filename:      a.filename || '',\n        mime_type:     a.mime_type || '',\n        size_bytes:    a.size_bytes || 0,\n        attachment_id: a.attachment_id || '',\n        gmail_link:    m.gmail_link\n      }\n    });\n  }\n}\n\nreturn out;\n"
+      },
+      "id": "node-expand",
+      "name": "Expandir adjuntos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "mode": "name",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "name",
+          "value": "email_attachment_ref"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "message_id",
+            "attachment_id",
+            "filename"
+          ]
+        },
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "id": "node-insert-attach",
+      "name": "Guardar referencia adjuntos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1180,
+        420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REEMPLAZAR",
+          "name": "Postgres telemetria"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Programar revisión": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuración": {
+      "main": [
+        [
+          {
+            "node": "Construir consulta Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir consulta Gmail": {
+      "main": [
+        [
+          {
+            "node": "Leer Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Gmail": {
+      "main": [
+        [
+          {
+            "node": "Normalizar correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar correo": {
+      "main": [
+        [
+          {
+            "node": "Guardar trazabilidad",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Expandir adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expandir adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Guardar referencia adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}
