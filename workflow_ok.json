@@ -1,0 +1,1176 @@
+{
+  "name": "Telemetria - Trazabilidad de correos (OK)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Programar revisión",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -200,
+        480
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "node-manual-hist",
+      "name": "Histórico manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -200,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "mode",
+              "value": "incremental",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "startDate",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "endDate",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "tzOffsetHours",
+              "value": -5,
+              "type": "number"
+            },
+            {
+              "id": "c5",
+              "name": "receivedOnly",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "c6",
+              "name": "monitorMailbox",
+              "value": "telemetria@zgroup.com.pe",
+              "type": "string"
+            },
+            {
+              "id": "c7",
+              "name": "keywordFilterEnabled",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "c8",
+              "name": "requiredKeyword",
+              "value": "telemetria",
+              "type": "string"
+            },
+            {
+              "id": "c9",
+              "name": "keywords",
+              "value": "={{ [\"Luis\", \"Eusebio\"] }}",
+              "type": "array"
+            },
+            {
+              "id": "c10",
+              "name": "skipKnownInDb",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "c11",
+              "name": "telemetriaVariants",
+              "value": "={{ [\"telemetria\", \"telemtria\", \"telemetrai\", \"ztrack\", \"api\", \"software\", \"plataforma\"] }}",
+              "type": "array"
+            },
+            {
+              "id": "c12",
+              "name": "matchExcerptRadius",
+              "value": 120,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-config",
+      "name": "Configuración",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        40,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "h1",
+              "name": "mode",
+              "value": "historical",
+              "type": "string"
+            },
+            {
+              "id": "h2",
+              "name": "startDate",
+              "value": "2025-12-01",
+              "type": "string"
+            },
+            {
+              "id": "h3",
+              "name": "endDate",
+              "value": "2025-12-26",
+              "type": "string"
+            },
+            {
+              "id": "h4",
+              "name": "tzOffsetHours",
+              "value": -5,
+              "type": "number"
+            },
+            {
+              "id": "h5",
+              "name": "receivedOnly",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "h6",
+              "name": "monitorMailbox",
+              "value": "telemetria@zgroup.com.pe",
+              "type": "string"
+            },
+            {
+              "id": "h7",
+              "name": "keywordFilterEnabled",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "h8",
+              "name": "skipKnownInDb",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "h9",
+              "name": "keywords",
+              "value": "={{ [\"Luis\", \"Eusebio\"] }}",
+              "type": "array"
+            },
+            {
+              "id": "h10",
+              "name": "telemetriaVariants",
+              "value": "={{ [\"telemetria\", \"telemtria\", \"telemetrai\", \"ztrack\", \"api\", \"software\", \"plataforma\"] }}",
+              "type": "array"
+            },
+            {
+              "id": "h11",
+              "name": "matchExcerptRadius",
+              "value": 120,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-config-hist",
+      "name": "Config histórico",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        40,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.mode }}",
+              "rightValue": "historical",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-hist",
+      "name": "¿Modo histórico?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        260,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ (() => { const c = ($('Config histórico').isExecuted ? $('Config histórico').first().json : $('Configuración').first().json); const s = c.startDate; const e = c.endDate; return \"WITH done AS (SELECT analyzed_date FROM email_history_day WHERE status = 'completed' AND analyzed_date >= '\" + s + \"'::date AND analyzed_date <= '\" + e + \"'::date) SELECT analyzed_date::text AS analyzed_date FROM done UNION ALL SELECT NULL::text AS analyzed_date WHERE NOT EXISTS (SELECT 1 FROM done) ORDER BY analyzed_date NULLS FIRST\"; })() }}",
+        "options": {
+          "alwaysOutputData": true
+        }
+      },
+      "id": "node-pg-analyzed",
+      "name": "Obtener días analizados",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        480,
+        360
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REEMPLAZAR",
+          "name": "Postgres telemetria"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Impulsar planificación (tras Obtener días analizados) ───────────────────\n// Postgres puede devolver analyzed_date = null (sin días previos).\n// Este nodo SIEMPRE emite 1 item para que Planificar se ejecute.\n\nconst analyzedDates = [];\n\nfor (const item of $input.all()) {\n  const raw = item.json?.analyzed_date;\n  if (raw == null || raw === 'null' || raw === '') continue;\n  const d = String(raw).slice(0, 10);\n  if (d && /^\\d{4}-\\d{2}-\\d{2}$/.test(d)) analyzedDates.push(d);\n}\n\nreturn [{\n  json: {\n    _impulsarPlanificacion: true,\n    analyzedDates,\n    analyzedCount: analyzedDates.length,\n    sinDiasPrevios: analyzedDates.length === 0\n  }\n}];\n"
+      },
+      "id": "node-impulse-plan",
+      "name": "Impulsar planificación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Planificar días pendientes (modo historical) ────────────────────────────\n// Devuelve solo el primer día pendiente; el loop continúa desde Guardar resumen día.\n\nfunction getCfg() {\n  const tryNames = [\n    'Config histórico', 'config histórico', 'Config Histórico',\n    'Configuración', 'configuración', 'Configuracion'\n  ];\n  for (const name of tryNames) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Config histórico o Configuración antes de planificar.');\n}\n\nfunction collectAnalyzedSet() {\n  const set = new Set();\n  const buckets = [];\n\n  buckets.push($input.all());\n  try { buckets.push($('Impulsar planificación').all() || []); } catch (e) {}\n  try { buckets.push($('Obtener días analizados').all() || []); } catch (e) {}\n\n  for (const items of buckets) {\n    for (const item of items) {\n      const j = item.json || {};\n      if (Array.isArray(j.analyzedDates)) {\n        for (const d of j.analyzedDates) {\n          const ds = String(d || '').slice(0, 10);\n          if (/^\\d{4}-\\d{2}-\\d{2}$/.test(ds)) set.add(ds);\n        }\n      }\n      const d = String(j.analyzed_date || '').slice(0, 10);\n      if (/^\\d{4}-\\d{2}-\\d{2}$/.test(d)) set.add(d);\n    }\n  }\n  return set;\n}\n\nconst cfg = getCfg();\nconst mode = String(cfg.mode || '').toLowerCase();\n\nif (mode !== 'historical') {\n  return [{ json: { _skipHistorical: true, mode } }];\n}\n\nconst startDate = String(cfg.startDate || '').trim();\nconst endDate = String(cfg.endDate || '').trim();\n\nif (!startDate || !endDate) {\n  throw new Error('Modo historical: indica startDate y endDate (YYYY-MM-DD).');\n}\n\nconst analyzedSet = collectAnalyzedSet();\n\nfunction parseYmd(s) {\n  const [y, m, d] = s.split('-').map(Number);\n  return { y, m, d };\n}\n\nfunction addDays(ymd, n) {\n  const dt = new Date(Date.UTC(ymd.y, ymd.m - 1, ymd.d + n, 12, 0, 0));\n  return {\n    y: dt.getUTCFullYear(),\n    m: dt.getUTCMonth() + 1,\n    d: dt.getUTCDate()\n  };\n}\n\nfunction fmt(ymd) {\n  return `${ymd.y}-${String(ymd.m).padStart(2, '0')}-${String(ymd.d).padStart(2, '0')}`;\n}\n\nconst pending = [];\nlet cur = parseYmd(startDate);\n\nwhile (true) {\n  const ds = fmt(cur);\n  if (ds > endDate) break;\n  if (!analyzedSet.has(ds)) pending.push(ds);\n  if (ds === endDate) break;\n  cur = addDays(cur, 1);\n}\n\nif (!pending.length) {\n  return [{\n    json: {\n      _noPendingDays: true,\n      rangeStart: startDate,\n      rangeEnd: endDate,\n      analyzedDaysKnown: analyzedSet.size,\n      message: `Todos los días entre ${startDate} y ${endDate} ya están analizados.`\n    }\n  }];\n}\n\n// Un día por ejecución del loop (Guardar resumen día → Obtener días analizados).\nconst processDate = pending[0];\n\nreturn [{\n  json: {\n    processDate,\n    rangeStart: startDate,\n    rangeEnd: endDate,\n    mode: 'historical',\n    dayIndex: 1,\n    daysPending: pending.length,\n    analyzedDaysKnown: analyzedSet.size\n  }\n}];\n"
+      },
+      "id": "node-plan-days",
+      "name": "Planificar días pendientes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !$json._noPendingDays }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-pending",
+      "name": "¿Hay días pendientes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1140,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Checkpoint SOLO para modo incremental (flujo del día).\n-- El modo \"range\" (días anteriores) NO usa este valor.\n-- Siempre devuelve 1 fila.\n\nSELECT\n  COALESCE(\n    EXTRACT(EPOCH FROM MAX(search_before))::bigint,\n    0\n  ) AS last_search_before_epoch,\n  MAX(search_before) AS last_search_before_iso,\n  COUNT(*)::int AS incremental_rows\nFROM email_trace\nWHERE review_mode = 'incremental'\n  AND trace_status = 'active';",
+        "options": {
+          "alwaysOutputData": true
+        }
+      },
+      "id": "node-pg-last-review",
+      "name": "Obtener última revisión",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        480,
+        560
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REEMPLAZAR",
+          "name": "Postgres telemetria"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Construir consulta Gmail ─────────────────────────────────────────────────\n// Modos — leer Config histórico o Configuración (compatible runOnceForEachItem)\n\nfunction nodeJson(nodeName) {\n  try {\n    const items = $(nodeName).all();\n    if (items && items.length && items[0].json) return items[0].json;\n  } catch (e) { /* nodo no ejecutado en esta rama */ }\n  return null;\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico', 'Configuración']) {\n    const j = nodeJson(name);\n    if (j && (j.mode || j.startDate !== undefined)) return j;\n  }\n  throw new Error('Ejecuta Configuración o Config histórico antes de este nodo.');\n}\n\nfunction inputJson() {\n  try {\n    const item = $input.item;\n    if (item && item.json) return item.json;\n  } catch (e) { /* runOnceForAllItems */ }\n  const all = $input.all();\n  return (all[0] && all[0].json) || {};\n}\n\nconst cfg = getCfg();\nconst dayItem = inputJson();\nconst tzOffset = Number(cfg.tzOffsetHours ?? -5);\nconst mode = String(dayItem.mode || cfg.mode || 'incremental').toLowerCase();\n\nfunction startOfDayEpoch(y, monthIndex, d) {\n  return Math.floor(Date.UTC(y, monthIndex, d, 0, 0, 0) / 1000) - tzOffset * 3600;\n}\n\nfunction localTodayParts() {\n  const localMs = Date.now() + tzOffset * 3600 * 1000;\n  const ld = new Date(localMs);\n  return { y: ld.getUTCFullYear(), m: ld.getUTCMonth(), d: ld.getUTCDate() };\n}\n\nfunction epochFromYmd(ymd) {\n  const [y, m, d] = String(ymd).split('-').map(Number);\n  return startOfDayEpoch(y, m - 1, d);\n}\n\nlet afterEpoch;\nlet beforeEpoch;\nlet processDate = null;\n\nif (mode === 'historical') {\n  processDate = String(dayItem.processDate || '').trim();\n  if (!processDate) {\n    throw new Error('Modo historical: falta processDate (Planificar días pendientes).');\n  }\n  afterEpoch = epochFromYmd(processDate);\n  beforeEpoch = afterEpoch + 86400;\n} else if (mode === 'range') {\n  if (!cfg.startDate || !cfg.endDate) {\n    throw new Error('Modo \"range\": indica startDate y endDate (YYYY-MM-DD) en Configuración.');\n  }\n  afterEpoch = epochFromYmd(cfg.startDate);\n  beforeEpoch = epochFromYmd(cfg.endDate) + 86400;\n} else if (mode === 'today') {\n  const { y, m, d } = localTodayParts();\n  afterEpoch = startOfDayEpoch(y, m, d);\n  beforeEpoch = afterEpoch + 86400;\n} else {\n  beforeEpoch = Math.floor(Date.now() / 1000);\n  const { y, m, d } = localTodayParts();\n  afterEpoch = startOfDayEpoch(y, m, d);\n\n  const last = nodeJson('Obtener última revisión') || {};\n  const lastEpoch = Number(last.last_search_before_epoch || 0);\n  if (lastEpoch > 0) {\n    const lastLocalMs = lastEpoch * 1000 + tzOffset * 3600 * 1000;\n    const ld = new Date(lastLocalMs);\n    const sameDay =\n      ld.getUTCFullYear() === y &&\n      ld.getUTCMonth() === m &&\n      ld.getUTCDate() === d;\n    if (sameDay && lastEpoch < beforeEpoch) {\n      afterEpoch = lastEpoch;\n    }\n  }\n}\n\nlet q = `after:${afterEpoch} before:${beforeEpoch}`;\n\nif (cfg.receivedOnly !== false) {\n  const mailbox = String(cfg.monitorMailbox || 'telemetria@zgroup.com.pe').trim();\n  q += ' -in:sent';\n  if (mailbox) q += ` -from:${mailbox}`;\n}\n\n// En historical: NO filtrar en Gmail — se listan todos los recibidos del día\nif (cfg.keywordFilterEnabled !== false && mode !== 'historical') {\n  const telemetriaKws = Array.isArray(cfg.telemetriaVariants) && cfg.telemetriaVariants.length\n    ? cfg.telemetriaVariants\n    : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'];\n  const persons = Array.isArray(cfg.keywords) && cfg.keywords.length\n    ? cfg.keywords\n    : ['Luis', 'Eusebio'];\n  const telPart = telemetriaKws.map(k => `\"${String(k).trim()}\"`).filter(Boolean).join(' OR ');\n  const personPart = persons.map(k => `\"${String(k).trim()}\"`).filter(Boolean).join(' OR ');\n  if (telPart && personPart) q += ` (${telPart}) (${personPart})`;\n}\n\nlet knownIdsQuery;\nif (mode === 'historical') {\n  const d = processDate.replace(/'/g, '');\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'historical' AND search_after::date = '${d}'::date`;\n} else if (mode === 'range') {\n  const start = String(cfg.startDate).trim();\n  const end = String(cfg.endDate).trim();\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'range' AND email_date >= '${start}'::date AND email_date < ('${end}'::date + INTERVAL '1 day')`;\n} else {\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'incremental' AND search_before::date = CURRENT_DATE`;\n}\n\nreturn [{\n  json: {\n    gmailQuery: q,\n    reviewMode: mode,\n    processDate,\n    knownIdsQuery,\n    afterEpoch,\n    beforeEpoch,\n    afterIso: new Date(afterEpoch * 1000).toISOString(),\n    beforeIso: new Date(beforeEpoch * 1000).toISOString(),\n    searchWindow: `${new Date(afterEpoch * 1000).toISOString()} → ${new Date(beforeEpoch * 1000).toISOString()}`,\n    rangeStart: mode === 'historical' ? (dayItem.rangeStart || cfg.startDate) : (mode === 'range' ? String(cfg.startDate) : null),\n    rangeEnd: mode === 'historical' ? (dayItem.rangeEnd || cfg.endDate) : (mode === 'range' ? String(cfg.endDate) : null)\n  }\n}];\n"
+      },
+      "id": "node-buildquery",
+      "name": "Construir consulta Gmail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.knownIdsQuery }}",
+        "options": {
+          "alwaysOutputData": true
+        }
+      },
+      "id": "node-pg-known",
+      "name": "Obtener IDs en BD",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1580,
+        360
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REEMPLAZAR",
+          "name": "Postgres telemetria"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.gmailQuery }}"
+            },
+            {
+              "name": "maxResults",
+              "value": "500"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-http-list",
+      "name": "Listar IDs Gmail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1580,
+        600
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Filtrar solo correos no registrados en email_trace ─────────────────────\n// Entrada: respuesta de Gmail messages.list → { messages: [{ id, threadId }] }\n//\n// Requiere que en el MISMO run hayan ejecutado antes:\n//   Construir consulta Gmail → Listar IDs Gmail → (este nodo)\n//   Construir consulta Gmail → Obtener IDs en BD (rama paralela, puede 0 filas)\n//\n// Si Configuración.skipKnownInDb = false, deja pasar todos.\n\nfunction safeAll(nodeName) {\n  try {\n    return $(nodeName).all() || [];\n  } catch (e) {\n    return [];\n  }\n}\n\nfunction safeFirstJson(nodeName) {\n  try {\n    return $(nodeName).first()?.json || null;\n  } catch (e) {\n    return null;\n  }\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Configuración o Config histórico.');\n}\n\nconst cfg = getCfg();\nconst skipKnown = cfg.skipKnownInDb !== false;\n\nfunction qinfoForDay() {\n  try {\n    const j = $('Construir consulta Gmail').item?.json;\n    if (j && j.gmailQuery) return j;\n  } catch (e) { /* optional */ }\n  return safeFirstJson('Construir consulta Gmail');\n}\n\nconst qinfo = qinfoForDay();\nif (!qinfo || !qinfo.gmailQuery) {\n  throw new Error(\n    'Falta ejecutar \"Construir consulta Gmail\" antes de \"Filtrar solo nuevos\".'\n  );\n}\n\nfunction knownIdsForCurrentDay() {\n  const ids = new Set();\n  try {\n    const paired = $('Obtener IDs en BD').item;\n    if (paired && paired.json && paired.json.message_id) {\n      ids.add(paired.json.message_id);\n      return ids;\n    }\n  } catch (e) { /* optional */ }\n  for (const item of safeAll('Obtener IDs en BD')) {\n    const id = item.json && item.json.message_id;\n    if (id) ids.add(id);\n  }\n  return ids;\n}\n\nconst known = knownIdsForCurrentDay();\n\nconst listResp = $input.first().json;\nconst messages = Array.isArray(listResp.messages) ? listResp.messages : [];\n\nif (!messages.length) {\n  return [{\n    json: {\n      _empty: true,\n      reason: 'sin_correos_en_gmail',\n      totalListed: 0,\n      totalNew: 0,\n      _qinfo: qinfo,\n      _dayCtx: {\n        processDate: qinfo.processDate,\n        rangeStart: qinfo.rangeStart,\n        rangeEnd: qinfo.rangeEnd\n      }\n    }\n  }];\n}\n\nconst nuevos = messages.filter(m => m && m.id && (!skipKnown || !known.has(m.id)));\n\nif (!nuevos.length) {\n  return [{\n    json: {\n      _empty: true,\n      reason: 'todos_ya_en_bd',\n      totalListed: messages.length,\n      totalKnown: known.size,\n      totalNew: 0,\n      gmailQuery: qinfo.gmailQuery,\n      _qinfo: qinfo,\n      _dayCtx: {\n        processDate: qinfo.processDate,\n        rangeStart: qinfo.rangeStart,\n        rangeEnd: qinfo.rangeEnd\n      }\n    }\n  }];\n}\n\nreturn nuevos.map(m => ({\n  json: {\n    id: m.id,\n    threadId: m.threadId,\n    gmailQuery: qinfo.gmailQuery,\n    reviewMode: qinfo.reviewMode,\n    _qinfo: qinfo,\n    _dayCtx: {\n      processDate: qinfo.processDate,\n      rangeStart: qinfo.rangeStart,\n      rangeEnd: qinfo.rangeEnd\n    },\n    _meta: {\n      totalListed: messages.length,\n      totalKnown: known.size,\n      totalNew: nuevos.length\n    }\n  }\n}));\n"
+      },
+      "id": "node-filter-new",
+      "name": "Filtrar solo nuevos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { try { if ($('Config histórico').isExecuted) return $('Config histórico').first().json.mode === 'historical' && $json._empty === true; } catch(e) {} return $('Configuración').first().json.mode === 'historical' && $json._empty === true; })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-empty-hist",
+      "name": "¿Día vacío histórico?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2020,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!$json.id }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-has-id",
+      "name": "¿Hay correos nuevos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2020,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Cortar rama si no hay correos nuevos que procesar ───────────────────────\n// Evita llamar a Gmail Get / Normalizar cuando Filtrar solo nuevos devolvió\n// un marcador _empty.\n\nconst out = [];\nfor (const item of $input.all()) {\n  if (item.json && item.json._empty) continue;\n  if (!item.json || !item.json.id) continue;\n  out.push(item);\n}\nreturn out;\n"
+      },
+      "id": "node-skip-empty",
+      "name": "Omitir si vacío",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "get",
+        "messageId": "={{ $json.id }}",
+        "simple": false,
+        "options": {
+          "downloadAttachments": false
+        }
+      },
+      "id": "node-gmail",
+      "name": "Leer Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2460,
+        780
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Normalizar correo (SOLO texto + REFERENCIAS de adjuntos) ────────────────\n// Entrada típica del nodo Gmail v2 con **Simplify = OFF** (simple: false):\n//   parseRawEmail → from/to/cc/subject/date/text/html + headers (objeto)\n// Entrada alternativa con **Simplify = ON** (simple: true):\n//   simplifyOutput → payload.parts + campos planos From/To/Subject\n//\n// Produce, por cada correo, un item con:\n//   • claves = columnas de email_trace (solo texto)\n//   • attachments[] = referencias de adjuntos (sin binarios) para el siguiente nodo\n//\n// Adjuntos: si Gmail tiene \"Download Attachments = ON\", lee metadatos de $binary\n// (filename, mimeType, size) sin persistir el binario. Si no hay binary, recorre\n// payload.parts cuando exista (formato API).\n\nconst qinfoById = new Map();\ntry {\n  for (const item of $('Filtrar solo nuevos').all()) {\n    const j = item.json || {};\n    if (j.id && j._qinfo) qinfoById.set(j.id, j._qinfo);\n  }\n} catch (e) { /* optional */ }\n\nfunction qinfoForMessage(messageId) {\n  if (messageId && qinfoById.has(messageId)) return qinfoById.get(messageId);\n  try { return $('Construir consulta Gmail').first().json; } catch (e) { return {}; }\n}\n\nfunction headerVal(m, name) {\n  const payload = m.payload || {};\n  if (Array.isArray(payload.headers)) {\n    const h = payload.headers.find(x => (x.name || '').toLowerCase() === name.toLowerCase());\n    if (h && h.value) return h.value;\n  }\n  const flat = m[name] || m[name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()];\n  if (typeof flat === 'string' && flat.trim()) return flat;\n\n  const hdrs = m.headers;\n  if (hdrs && typeof hdrs === 'object' && !Array.isArray(hdrs)) {\n    const key = name.toLowerCase();\n    const line = hdrs[key];\n    if (typeof line === 'string' && line.trim()) {\n      const idx = line.indexOf(':');\n      return idx >= 0 ? line.slice(idx + 1).trim() : line.trim();\n    }\n  }\n  return '';\n}\n\nfunction addressText(field) {\n  if (!field) return '';\n  if (typeof field === 'string') return field.trim();\n  if (typeof field.text === 'string' && field.text.trim()) return field.text.trim();\n  if (Array.isArray(field.value)) {\n    return field.value\n      .map(v => {\n        const addr = (v && v.address) || '';\n        const nm = (v && v.name) || '';\n        if (nm && addr) return `\"${nm}\" <${addr}>`;\n        return addr || nm;\n      })\n      .filter(Boolean)\n      .join(', ');\n  }\n  return '';\n}\n\nfunction decodeB64Url(data) {\n  if (!data) return '';\n  const b64 = data.replace(/-/g, '+').replace(/_/g, '/');\n  try { return Buffer.from(b64, 'base64').toString('utf-8'); } catch (e) { return ''; }\n}\n\nfunction stripHtml(html) {\n  return html\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<img[\\s\\S]*?>/gi, ' ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction cleanBodyText(text) {\n  return String(text || '')\n    .replace(/\\[image:[^\\]]*\\]/gi, ' ')\n    .replace(/\\[cid:[^\\]]*\\]/gi, ' ')\n    .replace(/<\\s*mailto:[^>]+>/gi, ' ')\n    .replace(/\\bimage\\d{3}\\.(png|jpe?g|gif|webp)\\b/gi, ' ')\n    .replace(/\\r\\n/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/[ \\t]+\\n/g, '\\n')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction isPdfAttachment(filename, mime) {\n  const fn = String(filename || '').toLowerCase();\n  const mt = String(mime || '').toLowerCase();\n  return fn.endsWith('.pdf') || mt === 'application/pdf' || mt.includes('pdf');\n}\n\nfunction parseEmailDate(m) {\n  const candidates = [m.date, m.internalDate, headerVal(m, 'Date')];\n  for (const raw of candidates) {\n    if (raw == null || raw === '') continue;\n    const d = typeof raw === 'number' || /^\\d+$/.test(String(raw))\n      ? new Date(Number(raw))\n      : new Date(raw);\n    if (!isNaN(d.getTime())) return d.toISOString();\n  }\n  return null;\n}\n\nfunction attachmentsFromParts(payload) {\n  const attachments = [];\n  function walk(part) {\n    if (!part) return;\n    const mime = part.mimeType || '';\n    const filename = part.filename || '';\n    if (filename && isPdfAttachment(filename, mime)) {\n      attachments.push({\n        filename,\n        mime_type: mime,\n        size_bytes: (part.body && part.body.size) || 0,\n        attachment_id: (part.body && part.body.attachmentId) || ''\n      });\n    } else if (mime === 'text/plain' && part.body && part.body.data) {\n      // body parts — no attachment\n    } else if (mime === 'text/html' && part.body && part.body.data) {\n      // body parts — no attachment\n    }\n    if (Array.isArray(part.parts)) part.parts.forEach(walk);\n  }\n  walk(payload);\n  return attachments;\n}\n\nfunction attachmentsFromBinary(binary) {\n  if (!binary || typeof binary !== 'object') return [];\n  const attachments = [];\n  for (const [key, meta] of Object.entries(binary)) {\n    if (!meta || typeof meta !== 'object') continue;\n    const filename = meta.fileName || meta.filename || key;\n    const mime = meta.mimeType || meta.mime_type || '';\n    if (!isPdfAttachment(filename, mime)) continue;\n    let sizeBytes = 0;\n    if (typeof meta.fileSize === 'string') {\n      const n = parseFloat(meta.fileSize.split(/\\s+/)[0]);\n      if (!isNaN(n)) {\n        const unit = (meta.fileSize.split(/\\s+/)[1] || '').toUpperCase();\n        sizeBytes = unit.startsWith('M') ? Math.round(n * 1024 * 1024)\n          : unit.startsWith('G') ? Math.round(n * 1024 * 1024 * 1024)\n          : unit.startsWith('K') ? Math.round(n * 1024)\n          : Math.round(n);\n      }\n    }\n    attachments.push({\n      filename,\n      mime_type: meta.mimeType || meta.mime_type || '',\n      size_bytes: sizeBytes,\n      attachment_id: ''\n    });\n  }\n  return attachments;\n}\n\nfunction bodyTextFromMessage(m) {\n  if (typeof m.text === 'string' && m.text.trim()) return m.text.trim();\n  if (typeof m.html === 'string' && m.html.trim()) return stripHtml(m.html);\n\n  const payload = m.payload || {};\n  let textPlain = '';\n  let textHtml = '';\n  function walk(part) {\n    if (!part) return;\n    const mime = part.mimeType || '';\n    if (mime === 'text/plain' && part.body && part.body.data) {\n      textPlain += decodeB64Url(part.body.data);\n    } else if (mime === 'text/html' && part.body && part.body.data) {\n      textHtml += decodeB64Url(part.body.data);\n    }\n    if (Array.isArray(part.parts)) part.parts.forEach(walk);\n  }\n  walk(payload);\n  if (textPlain.trim()) return textPlain.trim();\n  if (textHtml.trim()) return stripHtml(textHtml);\n  if (typeof m.snippet === 'string' && m.snippet.trim()) return m.snippet.trim();\n  return '';\n}\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const m = item.json;\n  const qinfo = qinfoForMessage(m.id);\n  const payload = m.payload || {};\n\n  let attachments = attachmentsFromParts(payload);\n  if (!attachments.length) attachments = attachmentsFromBinary(item.binary);\n\n  let bodyText = cleanBodyText(bodyTextFromMessage(m));\n  const snippet = (typeof m.snippet === 'string' && m.snippet.trim())\n    ? m.snippet.trim()\n    : bodyText.slice(0, 200);\n\n  const messageId = m.id;\n  const gmailLink = `https://mail.google.com/mail/u/0/#all/${messageId}`;\n\n  out.push({\n    json: {\n      message_id:      messageId,\n      thread_id:       m.threadId,\n      from_address:    addressText(m.from) || headerVal(m, 'From'),\n      to_addresses:    addressText(m.to) || headerVal(m, 'To'),\n      cc_addresses:    addressText(m.cc) || headerVal(m, 'Cc'),\n      subject:         (typeof m.subject === 'string' ? m.subject : '') || headerVal(m, 'Subject'),\n      email_date:      parseEmailDate(m),\n      body_text:       bodyText,\n      snippet,\n      has_attachments: attachments.length > 0,\n      gmail_link:      gmailLink,\n      search_query:    qinfo.gmailQuery,\n      search_after:    qinfo.afterIso,\n      search_before:   qinfo.beforeIso,\n      review_mode:     qinfo.reviewMode,\n      label_ids:       Array.isArray(m.labelIds) ? m.labelIds : [],\n      attachments\n    }\n  });\n}\n\nreturn out;\n"
+      },
+      "id": "node-normalize",
+      "name": "Normalizar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2680,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Filtrar: recibidos + keyword telemetría AND (Luis OR Eusebio) ───────────\n// Reglas:\n//   • Palabra suelta (límite \\b): telemetria, ztrack, api, software, plataforma…\n//   • NO cuenta dentro de correos: telemetria@…, @telemetria@…\n//   • NO cuenta en encabezados CC/Para: 'ZTRACK TELEMETRY' <ztrack@…>,\n//     'telemetria zgroup' <telemetria@…>, listas con ; y <...@…>\n//   • Luis / Eusebio: palabra suelta, fuera de correos y encabezados\n//   • Dos fragmentos independientes (telemetría + persona)\n\nfunction getCfg() {\n  for (const name of ['Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Configuración o Config histórico.');\n}\n\nconst cfg = getCfg();\nconst monitor = String(cfg.monitorMailbox || 'telemetria@zgroup.com.pe').toLowerCase();\nconst receivedOnly = cfg.receivedOnly !== false;\nconst keywordEnabled = cfg.keywordFilterEnabled !== false;\nconst excerptRadius = Number(cfg.matchExcerptRadius ?? 120);\nconst personKws = (Array.isArray(cfg.keywords) && cfg.keywords.length)\n  ? cfg.keywords\n  : ['Luis', 'Eusebio'];\n\nconst telemetriaVariants = Array.isArray(cfg.telemetriaVariants) && cfg.telemetriaVariants.length\n  ? cfg.telemetriaVariants\n  : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'];\n\nconst HEADER_LABEL_BLOCKLIST = [\n  /ztrack\\s+telemetry/i,\n  /telemetria\\s+zgroup/i,\n];\n\nfunction escapeRe(s) {\n  return String(s).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\n}\n\nfunction excerptAround(text, pos, radius) {\n  if (text == null || pos == null || pos < 0) return '';\n  const s = String(text);\n  const start = Math.max(0, pos - radius);\n  const end = Math.min(s.length, pos + radius);\n  let chunk = s.slice(start, end).replace(/\\s+/g, ' ').trim();\n  if (start > 0) chunk = '…' + chunk;\n  if (end < s.length) chunk = chunk + '…';\n  return chunk;\n}\n\nfunction fieldAtPosition(subject, body, snippet, pos) {\n  const sub = String(subject || '');\n  const bod = String(body || '');\n  const subEnd = sub.length;\n  const bodyEnd = subEnd + 1 + bod.length;\n  if (pos < subEnd) return 'subject';\n  if (pos < bodyEnd) return 'body';\n  return 'snippet';\n}\n\nfunction buildHaystack(subject, body, snippet) {\n  return `${subject || ''}\\n${body || ''}\\n${snippet || ''}`;\n}\n\nfunction isInsideAngleEmail(text, start, end) {\n  const lt = text.lastIndexOf('<', start);\n  if (lt < 0 || lt < start - 120) return false;\n  const gt = text.indexOf('>', end);\n  if (gt < 0 || gt > end + 120) return false;\n  const inner = text.slice(lt + 1, gt);\n  return inner.includes('@');\n}\n\nfunction isInsideEmail(text, start, end) {\n  const charBefore = start > 0 ? text[start - 1] : '';\n  const charAfter = end < text.length ? text[end] : '';\n\n  if (charBefore === '@' || charAfter === '@') return true;\n  if (isInsideAngleEmail(text, start, end)) return true;\n\n  let left = start;\n  while (left > 0 && /[\\w.+-]/.test(text[left - 1])) left--;\n  if (left > 0 && text[left - 1] === '@') {\n    left--;\n    while (left > 0 && /[\\w.+-]/.test(text[left - 1])) left--;\n  }\n\n  let right = end;\n  while (right < text.length && /[\\w.+-]/.test(text[right])) right++;\n  if (right < text.length && text[right] === '@') {\n    right++;\n    while (right < text.length && /[\\w.+-]/.test(text[right])) right++;\n  }\n\n  const token = text.slice(left, right);\n  if (!token.includes('@')) return false;\n\n  if (/^@[\\w.+-]+@[\\w.-]+\\.[\\w.-]+/.test(token)) return true;\n  if (/^[\\w.+-]+@[\\w.-]+\\.[\\w.-]+/.test(token)) return true;\n\n  return false;\n}\n\n/** 'Nombre visible' <correo@dominio> — encabezado Para/CC, no referencia real */\nfunction isInsideQuotedDisplayName(text, start, end) {\n  const scanStart = Math.max(0, start - 140);\n  const scanEnd = Math.min(text.length, end + 100);\n  const chunk = text.slice(scanStart, scanEnd);\n  const re = /(['\"])([^'\"]*)\\1\\s*<[^>]*@[^>]+>/g;\n  let m;\n  while ((m = re.exec(chunk)) !== null) {\n    const nameStart = scanStart + m.index + m[1].length;\n    const nameEnd = nameStart + m[2].length;\n    if (start >= nameStart && end <= nameEnd) return true;\n  }\n  return false;\n}\n\n/** Etiquetas conocidas de buzón en encabezados (ZTRACK TELEMETRY, telemetria zgroup) */\nfunction isKnownHeaderLabel(text, start, end) {\n  const winStart = Math.max(0, start - 30);\n  const winEnd = Math.min(text.length, end + 50);\n  const window = text.slice(winStart, winEnd);\n  for (const pat of HEADER_LABEL_BLOCKLIST) {\n    const m = pat.exec(window);\n    if (!m) continue;\n    const absStart = winStart + m.index;\n    const absEnd = absStart + m[0].length;\n    if (start >= absStart && end <= absEnd) return true;\n  }\n  return false;\n}\n\n/** Bloque tipo lista de destinatarios: varios @ y <…>; en la misma ventana */\nfunction isInRecipientListBlock(text, start, end) {\n  const winStart = Math.max(0, start - 180);\n  const winEnd = Math.min(text.length, end + 180);\n  const window = text.slice(winStart, winEnd);\n\n  const hasAngleEmail = /<[^>]*@[^>]+>/.test(window);\n  const hasBareEmail = /[\\w.+-]+@[\\w.-]+\\.\\w+/.test(window);\n  if (!hasAngleEmail && !hasBareEmail) return false;\n\n  const atCount = (window.match(/@/g) || []).length;\n  const semiCount = (window.match(/;/g) || []).length;\n  const gtSemi = (window.match(/>\\s*;/g) || []).length;\n\n  if (atCount >= 2 && (semiCount >= 1 || gtSemi >= 1)) {\n    if (isInsideQuotedDisplayName(text, start, end)) return true;\n    if (isKnownHeaderLabel(text, start, end)) return true;\n    if (isInsideEmail(text, start, end)) return true;\n    if (hasAngleEmail && (semiCount >= 1 || window.includes(\"'\") || window.includes('\"'))) {\n      return true;\n    }\n  }\n  return false;\n}\n\nfunction isInvalidMatchContext(text, start, end) {\n  return isInsideEmail(text, start, end)\n    || isInsideQuotedDisplayName(text, start, end)\n    || isKnownHeaderLabel(text, start, end)\n    || isInRecipientListBlock(text, start, end);\n}\n\nfunction isSentByMonitor(fromAddress, labelIds) {\n  const from = String(fromAddress || '').toLowerCase();\n  if (from.includes(monitor)) return true;\n  if (Array.isArray(labelIds) && labelIds.includes('SENT')) return true;\n  return false;\n}\n\nfunction findStandaloneKeyword(haystack, keywords) {\n  const candidates = [];\n\n  for (const kw of keywords) {\n    const re = new RegExp(`\\\\b${escapeRe(kw)}\\\\b`, 'gi');\n    let m;\n    while ((m = re.exec(haystack)) !== null) {\n      const start = m.index;\n      const end = start + m[0].length;\n      if (isInvalidMatchContext(haystack, start, end)) continue;\n      candidates.push({\n        position: start,\n        matched: m[0],\n        keyword: kw\n      });\n    }\n  }\n\n  if (!candidates.length) return null;\n  candidates.sort((a, b) => a.position - b.position);\n  return candidates[0];\n}\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const m = item.json;\n\n  if (receivedOnly && isSentByMonitor(m.from_address, m.label_ids)) {\n    continue;\n  }\n\n  if (keywordEnabled) {\n    const haystack = buildHaystack(m.subject, m.body_text, m.snippet);\n    const tel = findStandaloneKeyword(haystack, telemetriaVariants);\n    if (!tel) continue;\n    const person = findStandaloneKeyword(haystack, personKws);\n    if (!person) continue;\n\n    m.match_telemetria_pos = tel.position;\n    m.match_telemetria_keyword = tel.matched;\n    m.match_telemetria_excerpt = excerptAround(haystack, tel.position, excerptRadius);\n    m.match_person_pos = person.position;\n    m.match_person_keyword = person.matched;\n    m.match_person_excerpt = excerptAround(haystack, person.position, excerptRadius);\n    m.match_in_field = fieldAtPosition(m.subject, m.body_text, m.snippet, tel.position);\n  }\n\n  out.push({ json: m });\n}\n\nconst mode = String(cfg.mode || '').toLowerCase();\nconst inputCount = $input.all().length;\n\n// Histórico: correos leídos pero ningún match → cerrar día igual (cierra loop Split)\nif (!out.length && mode === 'historical' && inputCount > 0) {\n  return [{\n    json: {\n      _cerrarDiaHistorico: true,\n      emailsProcessed: inputCount\n    }\n  }];\n}\n\nreturn out;\n"
+      },
+      "id": "node-filter-relevant",
+      "name": "Filtrar recibidos relevantes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2900,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json._cerrarDiaHistorico === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-close-day",
+      "name": "¿Cerrar día sin matches?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3120,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Preparar insert email_trace (sin campos auxiliares) ─────────────────────\nconst out = [];\nfor (const item of $input.all()) {\n  const { attachments, label_ids, ...row } = item.json;\n  out.push({\n    json: {\n      ...row,\n      trace_status: row.trace_status || 'active'\n    }\n  });\n}\nreturn out;\n"
+      },
+      "id": "node-prepare-trace",
+      "name": "Preparar trazabilidad",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3340,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "mode": "name",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "name",
+          "value": "email_trace"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "message_id"
+          ]
+        },
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "id": "node-insert-trace",
+      "name": "Guardar trazabilidad",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3340,
+        680
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REEMPLAZAR",
+          "name": "Postgres telemetria"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Expandir adjuntos (una fila por referencia de adjunto) ──────────────────\n// Toma la salida del normalizador y emite un item por cada adjunto, con las\n// claves = columnas de email_attachment_ref. Si el correo no tiene adjuntos,\n// no emite nada para ese correo.\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const m = item.json;\n  const atts = Array.isArray(m.attachments) ? m.attachments : [];\n  for (const a of atts) {\n    out.push({\n      json: {\n        message_id:    m.message_id,\n        thread_id:     m.thread_id,\n        filename:      a.filename || '',\n        mime_type:     a.mime_type || '',\n        size_bytes:    a.size_bytes || 0,\n        attachment_id: a.attachment_id || '',\n        gmail_link:    m.gmail_link\n      }\n    });\n  }\n}\n\nreturn out;\n"
+      },
+      "id": "node-expand",
+      "name": "Expandir adjuntos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "mode": "name",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "name",
+          "value": "email_attachment_ref"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "message_id",
+            "attachment_id",
+            "filename"
+          ]
+        },
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "id": "node-insert-attach",
+      "name": "Guardar referencia adjuntos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3340,
+        880
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REEMPLAZAR",
+          "name": "Postgres telemetria"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Registrar resumen del día histórico ─────────────────────────────────────\n// Consolida IDs y genera SQL upsert seguro para email_history_day.\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all() || []; } catch (e) { return []; }\n}\n\nfunction safeFirstJson(nodeName) {\n  try { return $(nodeName).first()?.json || null; } catch (e) { return null; }\n}\n\nfunction pgStr(v) {\n  return `'${String(v ?? '').replace(/'/g, \"''\")}'`;\n}\n\nfunction pgJson(arr) {\n  return `'${JSON.stringify(arr || [])}'::jsonb`;\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Configuración o Config histórico.');\n}\n\nconst cfg = getCfg();\nconst qinfoMain = safeFirstJson('Construir consulta Gmail') || {};\nconst filtrarRow = safeFirstJson('Filtrar solo nuevos') || {};\nconst dayCtx =\n  filtrarRow._dayCtx ||\n  $input.first()?.json?._dayCtx ||\n  {\n    processDate: qinfoMain.processDate,\n    rangeStart: qinfoMain.rangeStart || cfg.startDate,\n    rangeEnd: qinfoMain.rangeEnd || cfg.endDate\n  };\n\nconst processDate = dayCtx.processDate || qinfoMain.processDate;\nif (!processDate) {\n  throw new Error('Registrar día histórico: falta processDate del día en curso.');\n}\n\nconst listRespMain = safeFirstJson('Listar IDs Gmail') || {};\nconst qinfo =\n  (() => {\n    try {\n      const j = $('Construir consulta Gmail').item?.json;\n      if (j && j.gmailQuery) return j;\n    } catch (e) { /* optional */ }\n    return qinfoMain;\n  })();\nconst listResp =\n  (() => {\n    try {\n      return $('Listar IDs Gmail').item?.json || listRespMain;\n    } catch (e) {\n      return listRespMain;\n    }\n  })();\n\nconst listedIds = Array.isArray(listResp.messages)\n  ? listResp.messages.map(m => m && m.id).filter(Boolean)\n  : [];\n\nconst processedIds = safeAll('Normalizar correo')\n  .map(i => i.json.message_id)\n  .filter(Boolean);\n\nconst matchIds = safeAll('Filtrar recibidos relevantes')\n  .map(i => i.json.message_id)\n  .filter(Boolean);\n\nconst inputJson = $input.first()?.json || {};\nconst emptyDay = inputJson._empty === true || inputJson._historicalEmptyDay === true;\n\nconst row = {\n  analyzed_date: processDate,\n  range_start: dayCtx.rangeStart || cfg.startDate,\n  range_end: dayCtx.rangeEnd || cfg.endDate,\n  gmail_query: qinfo.gmailQuery || '',\n  emails_listed_count: listedIds.length,\n  emails_processed_count: emptyDay ? 0 : processedIds.length,\n  emails_match_count: matchIds.length,\n  message_ids_listed: listedIds,\n  message_ids_processed: emptyDay ? [] : processedIds,\n  message_ids_match: matchIds,\n  status: 'completed',\n  empty_day: emptyDay\n};\n\nconst upsertSql = `\nINSERT INTO email_history_day (\n  analyzed_date, range_start, range_end, gmail_query,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  message_ids_listed, message_ids_processed, message_ids_match,\n  status, analyzed_at\n) VALUES (\n  ${pgStr(row.analyzed_date)}::date,\n  ${pgStr(row.range_start)}::date,\n  ${pgStr(row.range_end)}::date,\n  ${pgStr(row.gmail_query)},\n  ${row.emails_listed_count},\n  ${row.emails_processed_count},\n  ${row.emails_match_count},\n  ${pgJson(row.message_ids_listed)},\n  ${pgJson(row.message_ids_processed)},\n  ${pgJson(row.message_ids_match)},\n  ${pgStr(row.status)},\n  now()\n)\nON CONFLICT (analyzed_date) DO UPDATE SET\n  range_start = EXCLUDED.range_start,\n  range_end = EXCLUDED.range_end,\n  gmail_query = EXCLUDED.gmail_query,\n  emails_listed_count = EXCLUDED.emails_listed_count,\n  emails_processed_count = EXCLUDED.emails_processed_count,\n  emails_match_count = EXCLUDED.emails_match_count,\n  message_ids_listed = EXCLUDED.message_ids_listed,\n  message_ids_processed = EXCLUDED.message_ids_processed,\n  message_ids_match = EXCLUDED.message_ids_match,\n  status = EXCLUDED.status,\n  analyzed_at = now()\nRETURNING analyzed_date::text AS analyzed_date,\n  emails_listed_count, emails_processed_count, emails_match_count;\n`.trim();\n\nreturn [{ json: { ...row, upsertSql } }];\n"
+      },
+      "id": "node-reg-day",
+      "name": "Registrar día histórico",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3560,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.upsertSql }}",
+        "options": {
+          "alwaysOutputData": true
+        }
+      },
+      "id": "node-save-day",
+      "name": "Guardar resumen día",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3780,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REEMPLAZAR",
+          "name": "Postgres telemetria"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "node-reset-manual",
+      "name": "Reiniciar hoy",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -200,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "resetPassword",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-reset-config",
+      "name": "Config reinicio",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        20,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Validar contraseña de reinicio ──────────────────────────────────────────\n// Entrada: nodo \"Config reinicio\" con resetPassword.\n// Contraseña esperada: ZTRACKPERU2026\n\nconst RESET_PASSWORD = 'ZTRACKPERU2026';\nconst pwd = String($input.first().json.resetPassword || '').trim();\n\nif (pwd !== RESET_PASSWORD) {\n  throw new Error(\n    'Contraseña de reinicio incorrecta. Operación cancelada. ' +\n    'Indica ZTRACKPERU2026 en el nodo \"Config reinicio\" antes de ejecutar.'\n  );\n}\n\nreturn [{\n  json: {\n    resetOk: true,\n    resetAt: new Date().toISOString(),\n    message:\n      'Contraseña válida. Se marcarán como superseded los correos activos ' +\n      'y se reprocesará el día de hoy desde el inicio.'\n  }\n}];\n"
+      },
+      "id": "node-validar-reset",
+      "name": "Validar contraseña reset",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Marca todos los correos activos como superseded (conserva historial).\n-- Tras esto, knownIdsQuery no los excluye y el incremental reprocesa hoy.\n-- Siempre devuelve 1 fila.\n\nWITH updated AS (\n  UPDATE email_trace\n  SET trace_status = 'superseded'\n  WHERE trace_status = 'active'\n  RETURNING id\n)\nSELECT\n  COUNT(*)::int AS superseded_count,\n  now() AS superseded_at\nFROM updated;",
+        "options": {
+          "alwaysOutputData": true
+        }
+      },
+      "id": "node-supersede",
+      "name": "Supersede correos activos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        460,
+        80
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REEMPLAZAR",
+          "name": "Postgres telemetria"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Programar revisión": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Histórico manual": {
+      "main": [
+        [
+          {
+            "node": "Config histórico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config histórico": {
+      "main": [
+        [
+          {
+            "node": "Obtener días analizados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reiniciar hoy": {
+      "main": [
+        [
+          {
+            "node": "Config reinicio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config reinicio": {
+      "main": [
+        [
+          {
+            "node": "Validar contraseña reset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar contraseña reset": {
+      "main": [
+        [
+          {
+            "node": "Supersede correos activos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supersede correos activos": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuración": {
+      "main": [
+        [
+          {
+            "node": "¿Modo histórico?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Modo histórico?": {
+      "main": [
+        [
+          {
+            "node": "Obtener días analizados",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obtener última revisión",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener días analizados": {
+      "main": [
+        [
+          {
+            "node": "Impulsar planificación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Impulsar planificación": {
+      "main": [
+        [
+          {
+            "node": "Planificar días pendientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planificar días pendientes": {
+      "main": [
+        [
+          {
+            "node": "¿Hay días pendientes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay días pendientes?": {
+      "main": [
+        [
+          {
+            "node": "Construir consulta Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Obtener última revisión": {
+      "main": [
+        [
+          {
+            "node": "Construir consulta Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir consulta Gmail": {
+      "main": [
+        [
+          {
+            "node": "Obtener IDs en BD",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Listar IDs Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener IDs en BD": {
+      "main": [
+        []
+      ]
+    },
+    "Listar IDs Gmail": {
+      "main": [
+        [
+          {
+            "node": "Filtrar solo nuevos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar solo nuevos": {
+      "main": [
+        [
+          {
+            "node": "¿Día vacío histórico?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Día vacío histórico?": {
+      "main": [
+        [
+          {
+            "node": "Registrar día histórico",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Hay correos nuevos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay correos nuevos?": {
+      "main": [
+        [
+          {
+            "node": "Omitir si vacío",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Omitir si vacío": {
+      "main": [
+        [
+          {
+            "node": "Leer Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Gmail": {
+      "main": [
+        [
+          {
+            "node": "Normalizar correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar correo": {
+      "main": [
+        [
+          {
+            "node": "Filtrar recibidos relevantes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar recibidos relevantes": {
+      "main": [
+        [
+          {
+            "node": "¿Cerrar día sin matches?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Cerrar día sin matches?": {
+      "main": [
+        [
+          {
+            "node": "Registrar día histórico",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar trazabilidad",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Expandir adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar trazabilidad": {
+      "main": [
+        [
+          {
+            "node": "Guardar trazabilidad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expandir adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Guardar referencia adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar referencia adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Registrar día histórico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar trazabilidad": {
+      "main": [
+        [
+          {
+            "node": "Registrar día histórico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar día histórico": {
+      "main": [
+        [
+          {
+            "node": "Guardar resumen día",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar resumen día": {
+      "main": [
+        [
+          {
+            "node": "Obtener días analizados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

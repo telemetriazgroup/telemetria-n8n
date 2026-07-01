@@ -10,4 +10,5 @@ SELECT
   MAX(search_before) AS last_search_before_iso,
   COUNT(*)::int AS incremental_rows
 FROM email_trace
-WHERE review_mode = 'incremental';
+WHERE review_mode = 'incremental'
+  AND trace_status = 'active';

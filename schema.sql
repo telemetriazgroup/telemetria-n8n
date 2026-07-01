@@ -24,12 +24,19 @@ CREATE TABLE IF NOT EXISTS email_trace (
     search_query     TEXT,                        -- traza: con qué consulta se encontró
     search_after     TIMESTAMPTZ,                 -- inicio ventana de búsqueda Gmail
     search_before    TIMESTAMPTZ,                 -- fin ventana (hora de esta ejecución)
-    review_mode      TEXT,                        -- traza: 'incremental' | 'today' | 'range'
+    review_mode      TEXT,                        -- traza: incremental | today | range | historical
     match_telemetria_pos INTEGER,                 -- posición en texto donde apareció telemetria
     match_person_pos     INTEGER,                 -- posición de Luis/Eusebio
     match_person_keyword TEXT,                    -- palabra persona encontrada (ej. Luis)
+    match_telemetria_keyword TEXT,              -- variante encontrada (telemetria, telemtria…)
+    match_telemetria_excerpt TEXT,              -- fragmento alrededor de la coincidencia telemetria
+    match_person_excerpt     TEXT,              -- fragmento alrededor de Luis/Eusebio
+    match_in_field           TEXT,              -- subject | body | snippet (dónde apareció)
+    trace_status     TEXT NOT NULL DEFAULT 'active', -- active | superseded (reinicio conserva historial)
     reviewed_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS idx_email_trace_status ON email_trace (trace_status);
 
 CREATE INDEX IF NOT EXISTS idx_email_trace_thread ON email_trace (thread_id);
 CREATE INDEX IF NOT EXISTS idx_email_trace_date   ON email_trace (email_date);
@@ -56,6 +63,31 @@ CREATE TABLE IF NOT EXISTS email_attachment_ref (
 
 CREATE INDEX IF NOT EXISTS idx_attach_message  ON email_attachment_ref (message_id);
 CREATE INDEX IF NOT EXISTS idx_attach_filename ON email_attachment_ref (filename);
+
+-- ---------------------------------------------------------------------------
+-- Análisis histórico día a día (modo historical)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS email_history_day (
+    id                      BIGSERIAL PRIMARY KEY,
+    analyzed_date           DATE NOT NULL UNIQUE,
+    range_start             DATE NOT NULL,
+    range_end               DATE NOT NULL,
+    gmail_query             TEXT,
+    emails_listed_count     INTEGER NOT NULL DEFAULT 0,
+    emails_processed_count  INTEGER NOT NULL DEFAULT 0,
+    emails_match_count      INTEGER NOT NULL DEFAULT 0,
+    message_ids_listed      JSONB NOT NULL DEFAULT '[]'::jsonb,
+    message_ids_processed   JSONB NOT NULL DEFAULT '[]'::jsonb,
+    message_ids_match       JSONB NOT NULL DEFAULT '[]'::jsonb,
+    status                  TEXT NOT NULL DEFAULT 'completed',
+    analyzed_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_history_day_status
+        CHECK (status IN ('completed', 'partial', 'failed'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_history_day_range ON email_history_day (range_start, range_end);
+CREATE INDEX IF NOT EXISTS idx_history_day_analyzed_at ON email_history_day (analyzed_at DESC);
 
 -- ---------------------------------------------------------------------------
 -- Consultas útiles

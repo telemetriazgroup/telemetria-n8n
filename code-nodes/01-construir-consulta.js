@@ -1,14 +1,35 @@
 // ── Construir consulta Gmail ─────────────────────────────────────────────────
-// Modos (Configuración.mode) — SIEMPRE leer $('Configuración'), no $input
-// (el input puede ser la fila de "Obtener última revisión").
-//
-//   incremental -> hoy: desde último search_before incremental de HOY hasta ahora
-//   today       -> día local completo
-//   range       -> startDate..endDate (independiente del checkpoint del 27)
+// Modos — leer Config histórico o Configuración (compatible runOnceForEachItem)
 
-const cfg = $('Configuración').first().json;
+function nodeJson(nodeName) {
+  try {
+    const items = $(nodeName).all();
+    if (items && items.length && items[0].json) return items[0].json;
+  } catch (e) { /* nodo no ejecutado en esta rama */ }
+  return null;
+}
+
+function getCfg() {
+  for (const name of ['Config histórico', 'Configuración']) {
+    const j = nodeJson(name);
+    if (j && (j.mode || j.startDate !== undefined)) return j;
+  }
+  throw new Error('Ejecuta Configuración o Config histórico antes de este nodo.');
+}
+
+function inputJson() {
+  try {
+    const item = $input.item;
+    if (item && item.json) return item.json;
+  } catch (e) { /* runOnceForAllItems */ }
+  const all = $input.all();
+  return (all[0] && all[0].json) || {};
+}
+
+const cfg = getCfg();
+const dayItem = inputJson();
 const tzOffset = Number(cfg.tzOffsetHours ?? -5);
-const mode = String(cfg.mode || 'incremental').toLowerCase();
+const mode = String(dayItem.mode || cfg.mode || 'incremental').toLowerCase();
 
 function startOfDayEpoch(y, monthIndex, d) {
   return Math.floor(Date.UTC(y, monthIndex, d, 0, 0, 0) / 1000) - tzOffset * 3600;
@@ -20,28 +41,38 @@ function localTodayParts() {
   return { y: ld.getUTCFullYear(), m: ld.getUTCMonth(), d: ld.getUTCDate() };
 }
 
+function epochFromYmd(ymd) {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  return startOfDayEpoch(y, m - 1, d);
+}
+
 let afterEpoch;
 let beforeEpoch;
+let processDate = null;
 
-if (mode === 'range') {
+if (mode === 'historical') {
+  processDate = String(dayItem.processDate || '').trim();
+  if (!processDate) {
+    throw new Error('Modo historical: falta processDate (Planificar días pendientes).');
+  }
+  afterEpoch = epochFromYmd(processDate);
+  beforeEpoch = afterEpoch + 86400;
+} else if (mode === 'range') {
   if (!cfg.startDate || !cfg.endDate) {
     throw new Error('Modo "range": indica startDate y endDate (YYYY-MM-DD) en Configuración.');
   }
-  const [sy, sm, sd] = String(cfg.startDate).split('-').map(Number);
-  const [ey, em, ed] = String(cfg.endDate).split('-').map(Number);
-  afterEpoch = startOfDayEpoch(sy, sm - 1, sd);
-  beforeEpoch = startOfDayEpoch(ey, em - 1, ed) + 86400;
+  afterEpoch = epochFromYmd(cfg.startDate);
+  beforeEpoch = epochFromYmd(cfg.endDate) + 86400;
 } else if (mode === 'today') {
   const { y, m, d } = localTodayParts();
   afterEpoch = startOfDayEpoch(y, m, d);
   beforeEpoch = afterEpoch + 86400;
 } else {
-  // incremental — solo checkpoint del MISMO día local; ignora revisiones de otros días
   beforeEpoch = Math.floor(Date.now() / 1000);
   const { y, m, d } = localTodayParts();
   afterEpoch = startOfDayEpoch(y, m, d);
 
-  const last = $('Obtener última revisión').first()?.json || {};
+  const last = nodeJson('Obtener última revisión') || {};
   const lastEpoch = Number(last.last_search_before_epoch || 0);
   if (lastEpoch > 0) {
     const lastLocalMs = lastEpoch * 1000 + tzOffset * 3600 * 1000;
@@ -64,35 +95,43 @@ if (cfg.receivedOnly !== false) {
   if (mailbox) q += ` -from:${mailbox}`;
 }
 
-if (cfg.keywordFilterEnabled !== false) {
-  const required = String(cfg.requiredKeyword || 'telemetria').trim();
+// En historical: NO filtrar en Gmail — se listan todos los recibidos del día
+if (cfg.keywordFilterEnabled !== false && mode !== 'historical') {
+  const telemetriaKws = Array.isArray(cfg.telemetriaVariants) && cfg.telemetriaVariants.length
+    ? cfg.telemetriaVariants
+    : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'];
   const persons = Array.isArray(cfg.keywords) && cfg.keywords.length
     ? cfg.keywords
     : ['Luis', 'Eusebio'];
-  const orPart = persons.map(k => `"${String(k).trim()}"`).filter(Boolean).join(' OR ');
-  if (required && orPart) q += ` ${required} (${orPart})`;
+  const telPart = telemetriaKws.map(k => `"${String(k).trim()}"`).filter(Boolean).join(' OR ');
+  const personPart = persons.map(k => `"${String(k).trim()}"`).filter(Boolean).join(' OR ');
+  if (telPart && personPart) q += ` (${telPart}) (${personPart})`;
 }
 
 let knownIdsQuery;
-if (mode === 'range') {
+if (mode === 'historical') {
+  const d = processDate.replace(/'/g, '');
+  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'historical' AND search_after::date = '${d}'::date`;
+} else if (mode === 'range') {
   const start = String(cfg.startDate).trim();
   const end = String(cfg.endDate).trim();
-  knownIdsQuery = `SELECT message_id FROM email_trace WHERE review_mode = 'range' AND email_date >= '${start}'::date AND email_date < ('${end}'::date + INTERVAL '1 day')`;
+  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'range' AND email_date >= '${start}'::date AND email_date < ('${end}'::date + INTERVAL '1 day')`;
 } else {
-  knownIdsQuery = `SELECT message_id FROM email_trace WHERE review_mode = 'incremental' AND search_before::date = CURRENT_DATE`;
+  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'incremental' AND search_before::date = CURRENT_DATE`;
 }
 
 return [{
   json: {
     gmailQuery: q,
     reviewMode: mode,
+    processDate,
     knownIdsQuery,
     afterEpoch,
     beforeEpoch,
     afterIso: new Date(afterEpoch * 1000).toISOString(),
     beforeIso: new Date(beforeEpoch * 1000).toISOString(),
     searchWindow: `${new Date(afterEpoch * 1000).toISOString()} → ${new Date(beforeEpoch * 1000).toISOString()}`,
-    rangeStart: mode === 'range' ? String(cfg.startDate) : null,
-    rangeEnd: mode === 'range' ? String(cfg.endDate) : null
+    rangeStart: mode === 'historical' ? (dayItem.rangeStart || cfg.startDate) : (mode === 'range' ? String(cfg.startDate) : null),
+    rangeEnd: mode === 'historical' ? (dayItem.rangeEnd || cfg.endDate) : (mode === 'range' ? String(cfg.endDate) : null)
   }
 }];

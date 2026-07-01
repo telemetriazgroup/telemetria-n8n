@@ -24,6 +24,38 @@ docker exec -it postgres-telemetria psql -U telemetria_app -d telemetria -c '\dt
 
 Deben existir `email_trace` y `email_attachment_ref`.
 
+**Si la BD ya existía antes de junio 2026**, aplica también las migraciones en orden:
+
+```bash
+docker exec -i postgres-telemetria psql -U telemetria_app -d telemetria \
+  < infra/postgres/03-email-trace-search-match.sql
+docker exec -i postgres-telemetria psql -U telemetria_app -d telemetria \
+  < infra/postgres/04-email-trace-status-match-excerpt.sql
+```
+
+La migración `04` añade `trace_status` (active/superseded) y columnas de contexto
+de coincidencia (`match_telemetria_excerpt`, `match_person_excerpt`, etc.).
+
+### Reinicio total de tablas (borrar datos + estructura actual)
+
+Si quieres **vaciar todo** y dejar la BD como recién instalada con la estructura
+actual (incluye `trace_status`, excerpts de match, etc.):
+
+```bash
+docker exec -i postgres-telemetria psql -U telemetria_app -d telemetria \
+  < infra/postgres/00-reset-telemetria-schema.sql
+```
+
+Manual (sin Docker):
+
+```bash
+psql -h <host> -U telemetria_app -d telemetria \
+  -f infra/postgres/00-reset-telemetria-schema.sql
+```
+
+El script elimina `email_trace` y `email_attachment_ref` y las recrea vacías.
+**No afecta** la base interna de n8n (`n8n`).
+
 **Solo si instalaste Postgres manualmente** (sin Docker):
 
 ```bash
@@ -35,8 +67,9 @@ psql -h <host> -U telemetria_app -d telemetria -f schema.sql
 ## Paso 2 — Importar el workflow
 
 1. En n8n: **Workflows → Import from File**
-2. Selecciona `workflow.json` del repositorio.
-3. El workflow se llama **Telemetria - Trazabilidad de correos (base)**.
+2. Selecciona **`workflow_ok.json`** del repositorio (versión corregida y consolidada).
+   También puedes usar `workflow.json` (base).
+3. El workflow se llama **Telemetria - Trazabilidad de correos (OK)**.
 
 Si algún parámetro no se importa bien en tu versión de n8n, recrea los nodos
 manualmente usando el código de `code-nodes/` como fuente de verdad.
@@ -122,7 +155,7 @@ receivedOnly = true
 monitorMailbox = telemetria@zgroup.com.pe
 keywordFilterEnabled = true
 keywords = ["Luis", "Eusebio"]
-telemetriaVariants = ["telemetria", "telemtria", "telemetrai"]
+telemetriaVariants = ["telemetria", "telemtria", "telemetrai", "ztrack", "api", "software", "plataforma"]
 ```
 
 - **1.ª ejecución del día (ej. 13:15):** busca correos de **00:00 → 13:15**.
@@ -248,11 +281,107 @@ Abre `gmail_link` en el navegador: debe llevarte al correo con el adjunto visibl
 
 ---
 
+## Reiniciar el día de hoy (contraseña)
+
+El workflow incluye una **segunda entrada manual** para reprocesar hoy desde cero
+sin borrar el historial.
+
+### Flujo
+
+```
+Reiniciar hoy → Config reinicio → Validar contraseña reset
+  → Supersede correos activos → Configuración → … (pipeline normal)
+```
+
+### Pasos
+
+1. Reimporta **`workflow_ok.json`** si aún no tienes los nodos de reinicio.
+2. Ejecuta la migración `04-email-trace-status-match-excerpt.sql` (ver Paso 1).
+3. Abre el nodo **Config reinicio** y pon en `resetPassword`:
+   ```
+   ZTRACKPERU2026
+   ```
+4. Pulsa **Execute workflow** desde el trigger **Reiniciar hoy** (no desde el cron).
+
+### Qué hace
+
+| Acción | Efecto |
+|--------|--------|
+| Contraseña incorrecta | El flujo se detiene; no se modifica la BD |
+| Contraseña correcta | Todos los registros `trace_status = 'active'` pasan a **`superseded`** |
+| Pipeline normal | Vuelve a buscar correos de **hoy** en Gmail e inserta filas nuevas `active` |
+
+Los correos antiguos **no se borran**; quedan como `superseded` para auditoría.
+Solo los `active` cuentan para anti-duplicados y checkpoint incremental.
+
+### Campos de coincidencia (correos largos)
+
+El filtro **Filtrar recibidos relevantes** exige **dos coincidencias reales** en el texto:
+
+1. **Grupo telemetría** (palabra suelta): `telemetria`, `telemtria`, `telemetrai`, `ztrack`, `api`, `software`, `plataforma`
+2. **Persona** (palabra suelta): `Luis` o `Eusebio`
+
+**No cuentan** las apariciones dentro de correos electrónicos, por ejemplo:
+
+- `@telemetria@zgroup.com.pe` → **no** es match de telemetria
+- `telemetria@zgroup.com.pe` → **no** es match
+
+**Tampoco cuentan** encabezados de lista Para/CC embebidos en el cuerpo:
+
+- `'ZTRACK TELEMETRY' <ztrack@zgroup.com.pe>` → **no** (etiqueta de buzón)
+- `'telemetria zgroup' <telemetria@zgroup.com.pe>` → **no** (nombre visible + correo)
+- Bloques con varios `;` y `<correo@dominio>` → **no**
+
+**Sí cuenta**, por ejemplo:
+
+- `el equipo del área de telemetria` → match de **telemetria**
+- `…, Eusebio, Luis, por favor su apoyo` → match de **Eusebio** (primera persona válida en el texto)
+
+Se guardan **dos fragmentos independientes** en BD:
+
+| Columna | Contenido |
+|---------|-----------|
+| `match_telemetria_pos` | Índice en texto combinado (asunto + cuerpo + snippet) |
+| `match_telemetria_keyword` | Palabra encontrada (ej. telemetria) |
+| `match_telemetria_excerpt` | Fragmento `…texto alrededor…` |
+| `match_person_pos` | Posición de Luis/Eusebio |
+| `match_person_keyword` | Persona encontrada |
+| `match_person_excerpt` | Fragmento alrededor de la persona |
+| `match_in_field` | `subject`, `body` o `snippet` |
+
+Consulta de ejemplo:
+
+```sql
+SELECT subject,
+       match_in_field,
+       match_telemetria_excerpt,
+       match_person_excerpt,
+       trace_status,
+       reviewed_at
+FROM email_trace
+WHERE trace_status = 'active'
+ORDER BY reviewed_at DESC
+LIMIT 10;
+```
+
+---
+
 ## Paso 9 — Consultas útiles
 
 ```sql
--- Correos revisados recientemente
-SELECT subject, from_address, email_date, gmail_link
+-- Correos activos recientes con contexto de match
+SELECT subject, from_address,
+       match_telemetria_excerpt, match_person_excerpt, match_in_field,
+       gmail_link
+FROM email_trace
+WHERE trace_status = 'active'
+ORDER BY reviewed_at DESC;
+
+-- Historial superseded (reinicios anteriores)
+SELECT COUNT(*) AS superseded FROM email_trace WHERE trace_status = 'superseded';
+
+-- Correos revisados recientemente (todos los estados)
+SELECT subject, from_address, email_date, trace_status, gmail_link
 FROM email_trace
 ORDER BY reviewed_at DESC;
 
@@ -350,7 +479,8 @@ Así ves en qué nodo falla (Gmail, Postgres, etc.).
 | Postgres "connection refused" | Host debe ser `postgres-telemetria`, no `localhost` |
 | Gmail "unauthorized" | Credencial **Gmail OAuth2 API**, reconectar cuenta |
 | Campos vacíos en Normalizar (`from_address`, `subject`, …) | Normalizador desactualizado; ver [desafios_normalizar_correo.md](./desafios_normalizar_correo.md) |
-| **Obtener IDs en BD** “Success” pero **0 items** y flujo parado | Desconectar Postgres → Listar; usar ramas paralelas desde Construir (ver [desafios_procesamiento_incremental.md](./desafios_procesamiento_incremental.md)) |
+| **Obtener IDs en BD** “Success” pero **0 items** y flujo parado | Desconectar Postgres → Listar; ramas paralelas desde Construir (ver abajo) |
+| `Node 'Obtener IDs en BD' hasn't been executed` | Orden de nodos incorrecto; ver [desafios_procesamiento_incremental.md](./desafios_procesamiento_incremental.md) |
 | `Column 'attachments' does not exist` | Falta nodo **Preparar trazabilidad** antes de Guardar trazabilidad (ver abajo) |
 
 ### Error: `Column 'attachments' does not exist in selected table`
@@ -367,7 +497,7 @@ no tiene columna `attachments`.
 4. Conecta: Normalizar → Preparar trazabilidad → Guardar trazabilidad.
 5. Normalizar → Expandir adjuntos (sin cambios).
 
-O reimporta `workflow.json` actualizado del repo.
+O reimporta **`workflow_ok.json`** (recomendado) o `workflow.json` actualizado del repo.
 
 ---
 

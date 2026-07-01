@@ -12,8 +12,18 @@
 // (filename, mimeType, size) sin persistir el binario. Si no hay binary, recorre
 // payload.parts cuando exista (formato API).
 
-const qinfo = $('Construir consulta Gmail').first().json;
-const out = [];
+const qinfoById = new Map();
+try {
+  for (const item of $('Filtrar solo nuevos').all()) {
+    const j = item.json || {};
+    if (j.id && j._qinfo) qinfoById.set(j.id, j._qinfo);
+  }
+} catch (e) { /* optional */ }
+
+function qinfoForMessage(messageId) {
+  if (messageId && qinfoById.has(messageId)) return qinfoById.get(messageId);
+  try { return $('Construir consulta Gmail').first().json; } catch (e) { return {}; }
+}
 
 function headerVal(m, name) {
   const payload = m.payload || {};
@@ -179,8 +189,11 @@ function bodyTextFromMessage(m) {
   return '';
 }
 
+const out = [];
+
 for (const item of $input.all()) {
   const m = item.json;
+  const qinfo = qinfoForMessage(m.id);
   const payload = m.payload || {};
 
   let attachments = attachmentsFromParts(payload);

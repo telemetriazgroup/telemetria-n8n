@@ -80,7 +80,52 @@ Construir consulta Gmail
             → Leer Gmail (Get) …
 ```
 
-> **Importante:** si **Obtener IDs en BD** está **encadenado antes** de Listar IDs
+### Error: `Node 'Obtener IDs en BD' hasn't been executed`
+
+**Síntoma** en **Filtrar solo nuevos**:
+
+```
+Cannot assign to read only property 'name' ...
+Error: Node 'Obtener IDs en BD' hasn't been executed
+```
+
+**Qué significa:** el nodo Code intenta leer `$('Obtener IDs en BD')` o
+`$('Construir consulta Gmail')`, pero **ese nodo no corrió en la misma ejecución**
+(conexiones incorrectas o faltan nodos previos).
+
+**Conexión incorrecta (no usar):**
+
+```
+Configuración → Obtener IDs en BD → Filtrar solo nuevos   ❌
+```
+
+**Orden correcto:**
+
+```
+Configuración
+  → Obtener última revisión
+  → Construir consulta Gmail
+        ├─► Obtener IDs en BD     (rama lateral; 0 filas = OK)
+        └─► Listar IDs Gmail
+              → Filtrar solo nuevos
+              → Omitir si vacío
+              → Leer Gmail → …
+```
+
+**Por qué:** **Filtrar solo nuevos** espera la lista de Gmail (`messages[]`) como
+entrada, no la salida de Postgres. **Obtener IDs en BD** solo aporta IDs ya
+guardados; debe ejecutarse **en paralelo** desde **Construir consulta Gmail**, no
+encadenado antes de Filtrar.
+
+Además, la query de **Obtener IDs en BD** usa
+`$('Construir consulta Gmail').first().json.knownIdsQuery` — si **Construir** no
+corrió, Postgres falla o no se ejecuta y el Code revienta.
+
+**BD vacía:** si Obtener IDs devuelve 0 filas, no pasa nada — se procesan todos
+los IDs de Gmail (búsqueda desde cero). El Code actualizado usa `safeAll()` para
+no fallar si la rama lateral no corrió; aun así debes respetar el orden de nodos.
+
+---
 > y la query devuelve **0 filas**, n8n **no emite items** y el flujo **se detiene**
 > (“No output data returned”). Postgres ejecutó bien, pero el siguiente nodo no corre.
 >

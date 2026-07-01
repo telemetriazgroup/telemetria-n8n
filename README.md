@@ -10,6 +10,11 @@ de fases se implementan siguiendo las guías paso a paso.
 
 ---
 
+mode      = historical
+startDate = 2025-12-01
+endDate   = 2025-12-26
+
+
 ## Documentación del proyecto
 
 | Documento | Contenido |
@@ -22,6 +27,8 @@ de fases se implementan siguiendo las guías paso a paso.
 | [desafios_procesamiento_incremental.md](./desafios_procesamiento_incremental.md) | No reprocesar correos ya en BD; búsqueda ligera vs cuerpo completo |
 | [desafios_busqueda_incremental.md](./desafios_busqueda_incremental.md) | Modo incremental, rango de fechas, PDF, posiciones de keywords |
 | [fase_1.md](./fase_1.md) | Lectura de Gmail, esquema BD, workflow base, anti-duplicados |
+| [correos_historicos.md](./correos_historicos.md) | Barrido histórico día a día con registro en BD |
+| **workflow_ok.json** | Workflow n8n listo para importar (versión corregida) |
 | [fase_2.md](./fase_2.md) | Filtro por palabras clave configurable |
 | [fase_3.md](./fase_3.md) | Notificación por Telegram (MVP visible) |
 | [fase_4.md](./fase_4.md) | Hilos, máquina de estados y contexto completo |
