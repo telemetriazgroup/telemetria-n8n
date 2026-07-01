@@ -22,7 +22,12 @@ CREATE TABLE IF NOT EXISTS email_trace (
     has_attachments  BOOLEAN NOT NULL DEFAULT FALSE,
     gmail_link       TEXT,                        -- enlace directo al correo en Gmail
     search_query     TEXT,                        -- traza: con qué consulta se encontró
-    review_mode      TEXT,                        -- traza: 'today' | 'range'
+    search_after     TIMESTAMPTZ,                 -- inicio ventana de búsqueda Gmail
+    search_before    TIMESTAMPTZ,                 -- fin ventana (hora de esta ejecución)
+    review_mode      TEXT,                        -- traza: 'incremental' | 'today' | 'range'
+    match_telemetria_pos INTEGER,                 -- posición en texto donde apareció telemetria
+    match_person_pos     INTEGER,                 -- posición de Luis/Eusebio
+    match_person_keyword TEXT,                    -- palabra persona encontrada (ej. Luis)
     reviewed_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

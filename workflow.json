@@ -28,7 +28,7 @@
             {
               "id": "c1",
               "name": "mode",
-              "value": "today",
+              "value": "incremental",
               "type": "string"
             },
             {
@@ -51,14 +51,44 @@
             },
             {
               "id": "c5",
-              "name": "keywordFilterEnabled",
-              "value": false,
+              "name": "receivedOnly",
+              "value": true,
               "type": "boolean"
             },
             {
               "id": "c6",
+              "name": "monitorMailbox",
+              "value": "telemetria@zgroup.com.pe",
+              "type": "string"
+            },
+            {
+              "id": "c7",
+              "name": "keywordFilterEnabled",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "c8",
+              "name": "requiredKeyword",
+              "value": "telemetria",
+              "type": "string"
+            },
+            {
+              "id": "c9",
               "name": "keywords",
-              "value": "={{ [\"Eusebio\", \"Luis\"] }}",
+              "value": "={{ [\"Luis\", \"Eusebio\"] }}",
+              "type": "array"
+            },
+            {
+              "id": "c10",
+              "name": "skipKnownInDb",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "c11",
+              "name": "telemetriaVariants",
+              "value": "={{ [\"telemetria\", \"telemtria\", \"telemetrai\"] }}",
               "type": "array"
             }
           ]
@@ -76,7 +106,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Construir consulta Gmail (modo \"today\" / \"range\") ───────────────────────\n// Lee la configuración del nodo \"Configuración\" y arma el parámetro de búsqueda\n// `q` de Gmail usando timestamps epoch en segundos, para evitar ambigüedad de\n// zona horaria (el contenedor de n8n suele estar en UTC; Lima es UTC-5).\n//\n//   mode = \"today\" -> correos del día de hoy (en la zona horaria configurada)\n//   mode = \"range\" -> correos entre startDate y endDate (ambos inclusive)\n\nconst cfg = $input.first().json;\n\nconst tzOffset = Number(cfg.tzOffsetHours ?? -5);          // Lima = -5\nconst mode = String(cfg.mode || 'today').toLowerCase();\n\n// epoch (segundos) del inicio del día local para una fecha \"wall clock\" local\nfunction startOfDayEpoch(y, monthIndex, d) {\n  return Math.floor(Date.UTC(y, monthIndex, d, 0, 0, 0) / 1000) - tzOffset * 3600;\n}\n\nlet afterEpoch, beforeEpoch;\n\nif (mode === 'range') {\n  if (!cfg.startDate || !cfg.endDate) {\n    throw new Error('El modo \"range\" requiere startDate y endDate en formato YYYY-MM-DD.');\n  }\n  const [sy, sm, sd] = String(cfg.startDate).split('-').map(Number);\n  const [ey, em, ed] = String(cfg.endDate).split('-').map(Number);\n  afterEpoch  = startOfDayEpoch(sy, sm - 1, sd);\n  beforeEpoch = startOfDayEpoch(ey, em - 1, ed) + 86400;  // incluye el endDate completo\n} else {\n  // today, en la zona horaria configurada\n  const localMs = Date.now() + tzOffset * 3600 * 1000;\n  const ld = new Date(localMs);\n  afterEpoch  = startOfDayEpoch(ld.getUTCFullYear(), ld.getUTCMonth(), ld.getUTCDate());\n  beforeEpoch = afterEpoch + 86400;\n}\n\nlet q = `after:${afterEpoch} before:${beforeEpoch}`;\n\n// Filtro opcional por palabras clave (configurable y ampliable)\nif (cfg.keywordFilterEnabled && Array.isArray(cfg.keywords) && cfg.keywords.length) {\n  const kw = cfg.keywords.map(k => `\"${k}\"`).join(' OR ');\n  q += ` (${kw})`;\n}\n\nreturn [{\n  json: {\n    gmailQuery: q,\n    reviewMode: mode,\n    afterEpoch,\n    beforeEpoch,\n    afterIso:  new Date(afterEpoch  * 1000).toISOString(),\n    beforeIso: new Date(beforeEpoch * 1000).toISOString()\n  }\n}];\n"
+        "jsCode": "// ── Construir consulta Gmail ─────────────────────────────────────────────────\n// Modos (Configuración.mode) — SIEMPRE leer $('Configuración'), no $input\n// (el input puede ser la fila de \"Obtener última revisión\").\n//\n//   incremental -> hoy: desde último search_before incremental de HOY hasta ahora\n//   today       -> día local completo\n//   range       -> startDate..endDate (independiente del checkpoint del 27)\n\nconst cfg = $('Configuración').first().json;\nconst tzOffset = Number(cfg.tzOffsetHours ?? -5);\nconst mode = String(cfg.mode || 'incremental').toLowerCase();\n\nfunction startOfDayEpoch(y, monthIndex, d) {\n  return Math.floor(Date.UTC(y, monthIndex, d, 0, 0, 0) / 1000) - tzOffset * 3600;\n}\n\nfunction localTodayParts() {\n  const localMs = Date.now() + tzOffset * 3600 * 1000;\n  const ld = new Date(localMs);\n  return { y: ld.getUTCFullYear(), m: ld.getUTCMonth(), d: ld.getUTCDate() };\n}\n\nlet afterEpoch;\nlet beforeEpoch;\n\nif (mode === 'range') {\n  if (!cfg.startDate || !cfg.endDate) {\n    throw new Error('Modo \"range\": indica startDate y endDate (YYYY-MM-DD) en Configuración.');\n  }\n  const [sy, sm, sd] = String(cfg.startDate).split('-').map(Number);\n  const [ey, em, ed] = String(cfg.endDate).split('-').map(Number);\n  afterEpoch = startOfDayEpoch(sy, sm - 1, sd);\n  beforeEpoch = startOfDayEpoch(ey, em - 1, ed) + 86400;\n} else if (mode === 'today') {\n  const { y, m, d } = localTodayParts();\n  afterEpoch = startOfDayEpoch(y, m, d);\n  beforeEpoch = afterEpoch + 86400;\n} else {\n  // incremental — solo checkpoint del MISMO día local; ignora revisiones de otros días\n  beforeEpoch = Math.floor(Date.now() / 1000);\n  const { y, m, d } = localTodayParts();\n  afterEpoch = startOfDayEpoch(y, m, d);\n\n  const last = $('Obtener última revisión').first()?.json || {};\n  const lastEpoch = Number(last.last_search_before_epoch || 0);\n  if (lastEpoch > 0) {\n    const lastLocalMs = lastEpoch * 1000 + tzOffset * 3600 * 1000;\n    const ld = new Date(lastLocalMs);\n    const sameDay =\n      ld.getUTCFullYear() === y &&\n      ld.getUTCMonth() === m &&\n      ld.getUTCDate() === d;\n    if (sameDay && lastEpoch < beforeEpoch) {\n      afterEpoch = lastEpoch;\n    }\n  }\n}\n\nlet q = `after:${afterEpoch} before:${beforeEpoch}`;\n\nif (cfg.receivedOnly !== false) {\n  const mailbox = String(cfg.monitorMailbox || 'telemetria@zgroup.com.pe').trim();\n  q += ' -in:sent';\n  if (mailbox) q += ` -from:${mailbox}`;\n}\n\nif (cfg.keywordFilterEnabled !== false) {\n  const required = String(cfg.requiredKeyword || 'telemetria').trim();\n  const persons = Array.isArray(cfg.keywords) && cfg.keywords.length\n    ? cfg.keywords\n    : ['Luis', 'Eusebio'];\n  const orPart = persons.map(k => `\"${String(k).trim()}\"`).filter(Boolean).join(' OR ');\n  if (required && orPart) q += ` ${required} (${orPart})`;\n}\n\nlet knownIdsQuery;\nif (mode === 'range') {\n  const start = String(cfg.startDate).trim();\n  const end = String(cfg.endDate).trim();\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE review_mode = 'range' AND email_date >= '${start}'::date AND email_date < ('${end}'::date + INTERVAL '1 day')`;\n} else {\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE review_mode = 'incremental' AND search_before::date = CURRENT_DATE`;\n}\n\nreturn [{\n  json: {\n    gmailQuery: q,\n    reviewMode: mode,\n    knownIdsQuery,\n    afterEpoch,\n    beforeEpoch,\n    afterIso: new Date(afterEpoch * 1000).toISOString(),\n    beforeIso: new Date(beforeEpoch * 1000).toISOString(),\n    searchWindow: `${new Date(afterEpoch * 1000).toISOString()} → ${new Date(beforeEpoch * 1000).toISOString()}`,\n    rangeStart: mode === 'range' ? String(cfg.startDate) : null,\n    rangeEnd: mode === 'range' ? String(cfg.endDate) : null\n  }\n}];\n"
       },
       "id": "node-buildquery",
       "name": "Construir consulta Gmail",
@@ -90,12 +120,9 @@
     {
       "parameters": {
         "resource": "message",
-        "operation": "getAll",
-        "returnAll": true,
+        "operation": "get",
+        "messageId": "={{ $json.id }}",
         "simple": false,
-        "filters": {
-          "q": "={{ $json.gmailQuery }}"
-        },
         "options": {
           "downloadAttachments": false
         }
@@ -105,7 +132,7 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
       "position": [
-        500,
+        940,
         300
       ],
       "credentials": {
@@ -117,15 +144,28 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Normalizar correo (SOLO texto + REFERENCIAS de adjuntos) ────────────────\n// Requiere que el nodo Gmail use \"Simplify = OFF\" para recibir el payload\n// completo (con payload.headers y payload.parts).\n//\n// Produce, por cada correo, un item con:\n//   • claves = columnas de email_trace (solo texto)\n//   • attachments[] = referencias de adjuntos (sin binarios) para el siguiente nodo\n//\n// Los binarios NUNCA se descargan ni almacenan. De cada adjunto se guarda\n// filename + attachmentId + enlace al correo, para ubicarlo luego en Gmail.\n\nconst qinfo = $('Construir consulta Gmail').first().json;\nconst out = [];\n\nfunction headerVal(payload, name) {\n  if (!payload || !Array.isArray(payload.headers)) return '';\n  const h = payload.headers.find(x => (x.name || '').toLowerCase() === name.toLowerCase());\n  return h ? h.value : '';\n}\n\nfunction decodeB64Url(data) {\n  if (!data) return '';\n  const b64 = data.replace(/-/g, '+').replace(/_/g, '/');\n  try { return Buffer.from(b64, 'base64').toString('utf-8'); } catch (e) { return ''; }\n}\n\nfunction stripHtml(html) {\n  return html\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfor (const item of $input.all()) {\n  const m = item.json;\n  const payload = m.payload || {};\n\n  let textPlain = '';\n  let textHtml = '';\n  const attachments = [];\n\n  function walk(part) {\n    if (!part) return;\n    const mime = part.mimeType || '';\n    const filename = part.filename || '';\n\n    if (filename && filename.length > 0) {\n      // Adjunto -> SOLO referencia (sin binario)\n      attachments.push({\n        filename,\n        mime_type: mime,\n        size_bytes: (part.body && part.body.size) || 0,\n        attachment_id: (part.body && part.body.attachmentId) || ''\n      });\n    } else if (mime === 'text/plain' && part.body && part.body.data) {\n      textPlain += decodeB64Url(part.body.data);\n    } else if (mime === 'text/html' && part.body && part.body.data) {\n      textHtml += decodeB64Url(part.body.data);\n    }\n    if (Array.isArray(part.parts)) part.parts.forEach(walk);\n  }\n  walk(payload);\n\n  let bodyText = textPlain.trim();\n  if (!bodyText && textHtml) bodyText = stripHtml(textHtml);\n  if (!bodyText) bodyText = m.snippet || '';\n\n  // Fecha: preferir internalDate (epoch ms); si no, header Date\n  let emailDateIso = null;\n  if (m.internalDate) {\n    const d = new Date(Number(m.internalDate));\n    if (!isNaN(d.getTime())) emailDateIso = d.toISOString();\n  }\n  if (!emailDateIso) {\n    const d = new Date(headerVal(payload, 'Date'));\n    if (!isNaN(d.getTime())) emailDateIso = d.toISOString();\n  }\n\n  const messageId = m.id;\n  const gmailLink = `https://mail.google.com/mail/u/0/#all/${messageId}`;\n\n  out.push({\n    json: {\n      // ── columnas de email_trace ──\n      message_id:      messageId,\n      thread_id:       m.threadId,\n      from_address:    headerVal(payload, 'From'),\n      to_addresses:    headerVal(payload, 'To'),\n      cc_addresses:    headerVal(payload, 'Cc'),\n      subject:         headerVal(payload, 'Subject'),\n      email_date:      emailDateIso,\n      body_text:       bodyText,\n      snippet:         m.snippet || '',\n      has_attachments: attachments.length > 0,\n      gmail_link:      gmailLink,\n      search_query:    qinfo.gmailQuery,\n      review_mode:     qinfo.reviewMode,\n      // ── auxiliar para \"Expandir adjuntos\" (lo ignora el insert de trazabilidad) ──\n      attachments\n    }\n  });\n}\n\nreturn out;\n"
+        "jsCode": "// ── Normalizar correo (SOLO texto + REFERENCIAS de adjuntos) ────────────────\n// Entrada típica del nodo Gmail v2 con **Simplify = OFF** (simple: false):\n//   parseRawEmail → from/to/cc/subject/date/text/html + headers (objeto)\n// Entrada alternativa con **Simplify = ON** (simple: true):\n//   simplifyOutput → payload.parts + campos planos From/To/Subject\n//\n// Produce, por cada correo, un item con:\n//   • claves = columnas de email_trace (solo texto)\n//   • attachments[] = referencias de adjuntos (sin binarios) para el siguiente nodo\n//\n// Adjuntos: si Gmail tiene \"Download Attachments = ON\", lee metadatos de $binary\n// (filename, mimeType, size) sin persistir el binario. Si no hay binary, recorre\n// payload.parts cuando exista (formato API).\n\nconst qinfo = $('Construir consulta Gmail').first().json;\nconst out = [];\n\nfunction headerVal(m, name) {\n  const payload = m.payload || {};\n  if (Array.isArray(payload.headers)) {\n    const h = payload.headers.find(x => (x.name || '').toLowerCase() === name.toLowerCase());\n    if (h && h.value) return h.value;\n  }\n  const flat = m[name] || m[name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()];\n  if (typeof flat === 'string' && flat.trim()) return flat;\n\n  const hdrs = m.headers;\n  if (hdrs && typeof hdrs === 'object' && !Array.isArray(hdrs)) {\n    const key = name.toLowerCase();\n    const line = hdrs[key];\n    if (typeof line === 'string' && line.trim()) {\n      const idx = line.indexOf(':');\n      return idx >= 0 ? line.slice(idx + 1).trim() : line.trim();\n    }\n  }\n  return '';\n}\n\nfunction addressText(field) {\n  if (!field) return '';\n  if (typeof field === 'string') return field.trim();\n  if (typeof field.text === 'string' && field.text.trim()) return field.text.trim();\n  if (Array.isArray(field.value)) {\n    return field.value\n      .map(v => {\n        const addr = (v && v.address) || '';\n        const nm = (v && v.name) || '';\n        if (nm && addr) return `\"${nm}\" <${addr}>`;\n        return addr || nm;\n      })\n      .filter(Boolean)\n      .join(', ');\n  }\n  return '';\n}\n\nfunction decodeB64Url(data) {\n  if (!data) return '';\n  const b64 = data.replace(/-/g, '+').replace(/_/g, '/');\n  try { return Buffer.from(b64, 'base64').toString('utf-8'); } catch (e) { return ''; }\n}\n\nfunction stripHtml(html) {\n  return html\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<img[\\s\\S]*?>/gi, ' ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction cleanBodyText(text) {\n  return String(text || '')\n    .replace(/\\[image:[^\\]]*\\]/gi, ' ')\n    .replace(/\\[cid:[^\\]]*\\]/gi, ' ')\n    .replace(/<\\s*mailto:[^>]+>/gi, ' ')\n    .replace(/\\bimage\\d{3}\\.(png|jpe?g|gif|webp)\\b/gi, ' ')\n    .replace(/\\r\\n/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/[ \\t]+\\n/g, '\\n')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction isPdfAttachment(filename, mime) {\n  const fn = String(filename || '').toLowerCase();\n  const mt = String(mime || '').toLowerCase();\n  return fn.endsWith('.pdf') || mt === 'application/pdf' || mt.includes('pdf');\n}\n\nfunction parseEmailDate(m) {\n  const candidates = [m.date, m.internalDate, headerVal(m, 'Date')];\n  for (const raw of candidates) {\n    if (raw == null || raw === '') continue;\n    const d = typeof raw === 'number' || /^\\d+$/.test(String(raw))\n      ? new Date(Number(raw))\n      : new Date(raw);\n    if (!isNaN(d.getTime())) return d.toISOString();\n  }\n  return null;\n}\n\nfunction attachmentsFromParts(payload) {\n  const attachments = [];\n  function walk(part) {\n    if (!part) return;\n    const mime = part.mimeType || '';\n    const filename = part.filename || '';\n    if (filename && isPdfAttachment(filename, mime)) {\n      attachments.push({\n        filename,\n        mime_type: mime,\n        size_bytes: (part.body && part.body.size) || 0,\n        attachment_id: (part.body && part.body.attachmentId) || ''\n      });\n    } else if (mime === 'text/plain' && part.body && part.body.data) {\n      // body parts — no attachment\n    } else if (mime === 'text/html' && part.body && part.body.data) {\n      // body parts — no attachment\n    }\n    if (Array.isArray(part.parts)) part.parts.forEach(walk);\n  }\n  walk(payload);\n  return attachments;\n}\n\nfunction attachmentsFromBinary(binary) {\n  if (!binary || typeof binary !== 'object') return [];\n  const attachments = [];\n  for (const [key, meta] of Object.entries(binary)) {\n    if (!meta || typeof meta !== 'object') continue;\n    const filename = meta.fileName || meta.filename || key;\n    const mime = meta.mimeType || meta.mime_type || '';\n    if (!isPdfAttachment(filename, mime)) continue;\n    let sizeBytes = 0;\n    if (typeof meta.fileSize === 'string') {\n      const n = parseFloat(meta.fileSize.split(/\\s+/)[0]);\n      if (!isNaN(n)) {\n        const unit = (meta.fileSize.split(/\\s+/)[1] || '').toUpperCase();\n        sizeBytes = unit.startsWith('M') ? Math.round(n * 1024 * 1024)\n          : unit.startsWith('G') ? Math.round(n * 1024 * 1024 * 1024)\n          : unit.startsWith('K') ? Math.round(n * 1024)\n          : Math.round(n);\n      }\n    }\n    attachments.push({\n      filename,\n      mime_type: meta.mimeType || meta.mime_type || '',\n      size_bytes: sizeBytes,\n      attachment_id: ''\n    });\n  }\n  return attachments;\n}\n\nfunction bodyTextFromMessage(m) {\n  if (typeof m.text === 'string' && m.text.trim()) return m.text.trim();\n  if (typeof m.html === 'string' && m.html.trim()) return stripHtml(m.html);\n\n  const payload = m.payload || {};\n  let textPlain = '';\n  let textHtml = '';\n  function walk(part) {\n    if (!part) return;\n    const mime = part.mimeType || '';\n    if (mime === 'text/plain' && part.body && part.body.data) {\n      textPlain += decodeB64Url(part.body.data);\n    } else if (mime === 'text/html' && part.body && part.body.data) {\n      textHtml += decodeB64Url(part.body.data);\n    }\n    if (Array.isArray(part.parts)) part.parts.forEach(walk);\n  }\n  walk(payload);\n  if (textPlain.trim()) return textPlain.trim();\n  if (textHtml.trim()) return stripHtml(textHtml);\n  if (typeof m.snippet === 'string' && m.snippet.trim()) return m.snippet.trim();\n  return '';\n}\n\nfor (const item of $input.all()) {\n  const m = item.json;\n  const payload = m.payload || {};\n\n  let attachments = attachmentsFromParts(payload);\n  if (!attachments.length) attachments = attachmentsFromBinary(item.binary);\n\n  let bodyText = cleanBodyText(bodyTextFromMessage(m));\n  const snippet = (typeof m.snippet === 'string' && m.snippet.trim())\n    ? m.snippet.trim()\n    : bodyText.slice(0, 200);\n\n  const messageId = m.id;\n  const gmailLink = `https://mail.google.com/mail/u/0/#all/${messageId}`;\n\n  out.push({\n    json: {\n      message_id:      messageId,\n      thread_id:       m.threadId,\n      from_address:    addressText(m.from) || headerVal(m, 'From'),\n      to_addresses:    addressText(m.to) || headerVal(m, 'To'),\n      cc_addresses:    addressText(m.cc) || headerVal(m, 'Cc'),\n      subject:         (typeof m.subject === 'string' ? m.subject : '') || headerVal(m, 'Subject'),\n      email_date:      parseEmailDate(m),\n      body_text:       bodyText,\n      snippet,\n      has_attachments: attachments.length > 0,\n      gmail_link:      gmailLink,\n      search_query:    qinfo.gmailQuery,\n      search_after:    qinfo.afterIso,\n      search_before:   qinfo.beforeIso,\n      review_mode:     qinfo.reviewMode,\n      label_ids:       Array.isArray(m.labelIds) ? m.labelIds : [],\n      attachments\n    }\n  });\n}\n\nreturn out;\n"
       },
       "id": "node-normalize",
       "name": "Normalizar correo",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        720,
+        1160,
         300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Preparar insert email_trace (sin campos auxiliares) ─────────────────────\nconst out = [];\nfor (const item of $input.all()) {\n  const { attachments, label_ids, ...row } = item.json;\n  out.push({ json: row });\n}\nreturn out;\n"
+      },
+      "id": "node-prepare-trace",
+      "name": "Preparar trazabilidad",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        200
       ]
     },
     {
@@ -157,7 +197,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        960,
+        1280,
         200
       ],
       "credentials": {
@@ -176,7 +216,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        960,
+        1060,
         420
       ]
     },
@@ -211,8 +251,125 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1180,
+        1280,
         420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REEMPLAZAR",
+          "name": "Postgres telemetria"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Construir consulta Gmail').first().json.knownIdsQuery }}",
+        "options": {}
+      },
+      "id": "node-pg-known",
+      "name": "Obtener IDs en BD",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REEMPLAZAR",
+          "name": "Postgres telemetria"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $('Construir consulta Gmail').first().json.gmailQuery }}"
+            },
+            {
+              "name": "maxResults",
+              "value": "500"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-http-list",
+      "name": "Listar IDs Gmail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        820,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Filtrar solo correos no registrados en email_trace ─────────────────────\n// Entrada: respuesta de Gmail messages.list → { messages: [{ id, threadId }] }\n// Consulta IDs ya guardados en el nodo \"Obtener IDs en BD\".\n//\n// Si Configuración.skipKnownInDb = false, deja pasar todos (modo reproceso total).\n\nconst cfg = $('Configuración').first().json;\nconst skipKnown = cfg.skipKnownInDb !== false;\nconst qinfo = $('Construir consulta Gmail').first().json;\n\nconst known = new Set(\n  ($('Obtener IDs en BD').all() || []).map(i => i.json.message_id).filter(Boolean)\n);\n\nconst listResp = $input.first().json;\nconst messages = Array.isArray(listResp.messages) ? listResp.messages : [];\n\nif (!messages.length) {\n  return [{ json: { _empty: true, reason: 'sin_correos_en_gmail', totalListed: 0, totalNew: 0 } }];\n}\n\nconst nuevos = messages.filter(m => m && m.id && (!skipKnown || !known.has(m.id)));\n\nif (!nuevos.length) {\n  return [{\n    json: {\n      _empty: true,\n      reason: 'todos_ya_en_bd',\n      totalListed: messages.length,\n      totalKnown: known.size,\n      totalNew: 0,\n      gmailQuery: qinfo.gmailQuery\n    }\n  }];\n}\n\nreturn nuevos.map(m => ({\n  json: {\n    id: m.id,\n    threadId: m.threadId,\n    gmailQuery: qinfo.gmailQuery,\n    reviewMode: qinfo.reviewMode,\n    _meta: {\n      totalListed: messages.length,\n      totalKnown: known.size,\n      totalNew: nuevos.length\n    }\n  }\n}));\n"
+      },
+      "id": "node-filter-new",
+      "name": "Filtrar solo nuevos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Cortar rama si no hay correos nuevos que procesar ───────────────────────\n// Evita llamar a Gmail Get / Normalizar cuando Filtrar solo nuevos devolvió\n// un marcador _empty.\n\nconst out = [];\nfor (const item of $input.all()) {\n  if (item.json && item.json._empty) continue;\n  if (!item.json || !item.json.id) continue;\n  out.push(item);\n}\nreturn out;\n"
+      },
+      "id": "node-skip-empty",
+      "name": "Omitir si vacío",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Filtrar: recibidos + telemetria AND (Luis OR Eusebio) con posiciones ────\n// Case-insensitive. Acepta variantes: telemetria, telemtria, telemetrai.\n// Añade match_telemetria_pos, match_person_pos, match_person_keyword al item.\n\nconst cfg = $('Configuración').first().json;\nconst monitor = String(cfg.monitorMailbox || 'telemetria@zgroup.com.pe').toLowerCase();\nconst receivedOnly = cfg.receivedOnly !== false;\nconst keywordEnabled = cfg.keywordFilterEnabled !== false;\nconst personKws = (Array.isArray(cfg.keywords) && cfg.keywords.length)\n  ? cfg.keywords\n  : ['Luis', 'Eusebio'];\n\nconst telemetriaVariants = Array.isArray(cfg.telemetriaVariants) && cfg.telemetriaVariants.length\n  ? cfg.telemetriaVariants\n  : ['telemetria', 'telemtria', 'telemetrai'];\n\nfunction escapeRe(s) {\n  return String(s).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\n}\n\nfunction isSentByMonitor(fromAddress, labelIds) {\n  const from = String(fromAddress || '').toLowerCase();\n  if (from.includes(monitor)) return true;\n  if (Array.isArray(labelIds) && labelIds.includes('SENT')) return true;\n  return false;\n}\n\nfunction findTelemetria(haystack) {\n  for (const variant of telemetriaVariants) {\n    const re = new RegExp(escapeRe(variant), 'i');\n    const m = re.exec(haystack);\n    if (m) return { position: m.index, matched: m[0], keyword: variant };\n  }\n  return null;\n}\n\nfunction findPerson(haystack, keywords) {\n  for (const kw of keywords) {\n    const re = new RegExp(`\\\\b${escapeRe(kw)}\\\\b`, 'i');\n    const m = re.exec(haystack);\n    if (m) return { position: m.index, matched: m[0], keyword: kw };\n  }\n  return null;\n}\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const m = item.json;\n\n  if (receivedOnly && isSentByMonitor(m.from_address, m.label_ids)) {\n    continue;\n  }\n\n  if (keywordEnabled) {\n    const haystack = `${m.subject || ''}\\n${m.body_text || ''}\\n${m.snippet || ''}`;\n    const tel = findTelemetria(haystack);\n    if (!tel) continue;\n    const person = findPerson(haystack, personKws);\n    if (!person) continue;\n\n    m.match_telemetria_pos = tel.position;\n    m.match_person_pos = person.position;\n    m.match_person_keyword = person.matched;\n  }\n\n  out.push({ json: m });\n}\n\nreturn out;\n"
+      },
+      "id": "node-filter-relevant",
+      "name": "Filtrar recibidos relevantes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Checkpoint SOLO para modo incremental (flujo del día).\n-- El modo \"range\" (días anteriores) NO usa este valor.\n-- Siempre devuelve 1 fila.\n\nSELECT\n  COALESCE(\n    EXTRACT(EPOCH FROM MAX(search_before))::bigint,\n    0\n  ) AS last_search_before_epoch,\n  MAX(search_before) AS last_search_before_iso,\n  COUNT(*)::int AS incremental_rows\nFROM email_trace\nWHERE review_mode = 'incremental';\n",
+        "options": {}
+      },
+      "id": "node-pg-last-review",
+      "name": "Obtener última revisión",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        280,
+        300
       ],
       "credentials": {
         "postgres": {
@@ -238,7 +395,7 @@
       "main": [
         [
           {
-            "node": "Construir consulta Gmail",
+            "node": "Obtener última revisión",
             "type": "main",
             "index": 0
           }
@@ -246,6 +403,49 @@
       ]
     },
     "Construir consulta Gmail": {
+      "main": [
+        [
+          {
+            "node": "Obtener IDs en BD",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Listar IDs Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener IDs en BD": {
+      "main": [
+        []
+      ]
+    },
+    "Listar IDs Gmail": {
+      "main": [
+        [
+          {
+            "node": "Filtrar solo nuevos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar solo nuevos": {
+      "main": [
+        [
+          {
+            "node": "Omitir si vacío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Omitir si vacío": {
       "main": [
         [
           {
@@ -271,12 +471,18 @@
       "main": [
         [
           {
-            "node": "Guardar trazabilidad",
+            "node": "Filtrar recibidos relevantes",
             "type": "main",
             "index": 0
-          },
+          }
+        ]
+      ]
+    },
+    "Preparar trazabilidad": {
+      "main": [
+        [
           {
-            "node": "Expandir adjuntos",
+            "node": "Guardar trazabilidad",
             "type": "main",
             "index": 0
           }
@@ -288,6 +494,33 @@
         [
           {
             "node": "Guardar referencia adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar recibidos relevantes": {
+      "main": [
+        [
+          {
+            "node": "Preparar trazabilidad",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Expandir adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener última revisión": {
+      "main": [
+        [
+          {
+            "node": "Construir consulta Gmail",
             "type": "main",
             "index": 0
           }

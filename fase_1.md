@@ -49,9 +49,33 @@ Los nodos vienen con placeholder `REEMPLAZAR`. Asigna:
 
 | Nodo | Credencial |
 |------|------------|
-| **Leer Gmail** | Gmail OAuth2 (de F0) |
+| **Leer Gmail** | **Gmail OAuth2 API** (no confundir con Google OAuth2 API) |
 | **Guardar trazabilidad** | Postgres `telemetria` |
 | **Guardar referencia adjuntos** | Postgres `telemetria` |
+
+### Gmail: tipo correcto de credencial
+
+En n8n existen **dos tipos distintos**:
+
+| Tipo en n8n | ¿Sirve para el nodo Gmail? |
+|-------------|---------------------------|
+| **Gmail OAuth2 API** | **Sí** — es el que pide **Leer Gmail** |
+| Google OAuth2 API | **No** — no aparece en el desplegable del nodo |
+
+Si creaste **Google OAuth2 API** y ves *Account connected* pero el nodo sigue en
+*No credentials yet*, crea una credencial nueva:
+
+1. **Credentials → Add credential**
+2. Busca **Gmail OAuth2 API** (no "Google OAuth2 API")
+3. Mismo Client ID, Client Secret y scope `gmail.readonly`
+4. **Connect my account** → Save
+5. En **Leer Gmail** → Credential → elige la credencial **Gmail OAuth2**
+
+Puedes reutilizar el mismo Client ID/Secret de Google Cloud; solo cambia el
+**tipo** de credencial en n8n.
+
+> Más problemas (ID huérfano, redirect_uri, WebSocket): [desafios_gmail.md](./desafios_gmail.md)  
+> Campos vacíos en Normalizar: [desafios_normalizar_correo.md](./desafios_normalizar_correo.md)
 
 ---
 
@@ -61,8 +85,8 @@ En **Leer Gmail** confirma:
 
 | Parámetro | Valor | Motivo |
 |-----------|-------|--------|
-| **Simplify** | **OFF** | Necesita `payload.headers` y `payload.parts` |
-| **Download Attachments** | **OFF** | No almacenamos binarios |
+| **Simplify** | **OFF** | n8n devuelve `from`, `to`, `subject`, `text`, `date` (formato parseado). Ver [desafios_normalizar_correo.md](./desafios_normalizar_correo.md) |
+| **Leer Gmail** | **Download Attachments = OFF** | Evita cargar imágenes de firma; solo referencias PDF vía metadatos |
 | **Return All** | ON (si disponible) | Traer todos los del rango |
 | **Query** | `={{ $json.gmailQuery }}` | Viene del nodo anterior |
 
@@ -89,13 +113,32 @@ El anti-duplicados lo garantizan:
 
 En el nodo **Configuración**:
 
-**Modo hoy (por defecto):**
+**Modo incremental (por defecto):**
 
 ```
-mode = today
+mode = incremental
 tzOffsetHours = -5
-keywordFilterEnabled = false
+receivedOnly = true
+monitorMailbox = telemetria@zgroup.com.pe
+keywordFilterEnabled = true
+keywords = ["Luis", "Eusebio"]
+telemetriaVariants = ["telemetria", "telemtria", "telemetrai"]
 ```
+
+- **1.ª ejecución del día (ej. 13:15):** busca correos de **00:00 → 13:15**.
+- **Siguiente ciclo (ej. 13:45):** busca **13:15 → 13:45** (lee `search_before` de la última fila en BD).
+
+**Modo rango (histórico manual — días anteriores):**
+
+```
+mode = range
+startDate = 2026-06-20
+endDate = 2026-06-26
+tzOffsetHours = -5
+```
+
+Tras ejecutar, **vuelve a `mode = incremental`** para el cron del día. Ver
+[desafios_busqueda_incremental.md](./desafios_busqueda_incremental.md).
 
 **Modo rango (carga histórica o recuperación):**
 
@@ -116,14 +159,30 @@ en segundos, evitando desfases por UTC del contenedor.
 ```
 Programar revisión (cron 30 min)
       → Configuración
+      → Obtener última revisión
       → Construir consulta Gmail
-      → Leer Gmail (Get Many)
+           ├─► Obtener IDs en BD (rama lateral; 0 filas = OK)
+           └─► Listar IDs Gmail → Filtrar solo nuevos → Omitir si vacío
+      → Leer Gmail
       → Normalizar correo
-           ├─► Guardar trazabilidad (email_trace)
+      → Filtrar recibidos relevantes
+           ├─► Preparar trazabilidad → Guardar trazabilidad (email_trace)
            └─► Expandir adjuntos → Guardar referencia adjuntos
 ```
 
+Por qué el volumen crece y cómo evitar reprocesar: [desafios_procesamiento_incremental.md](./desafios_procesamiento_incremental.md).
+
+En **Configuración**, `skipKnownInDb = true` (default) omite correos cuyo
+`message_id` ya está en `email_trace` para la misma `search_query`.
+
+El nodo **Preparar trazabilidad** quita el campo auxiliar `attachments[]` antes
+del insert (no es columna de `email_trace`). Ver `code-nodes/04-preparar-trace.js`.
+
 ### Qué produce **Normalizar correo**
+
+Entrada esperada: salida de **Leer Gmail** con **Simplify OFF** (`from`, `to`,
+`subject`, `text`, `date`). Detalle del formato y troubleshooting en
+[desafios_normalizar_correo.md](./desafios_normalizar_correo.md).
 
 Por cada correo, campos alineados con `email_trace`:
 
@@ -219,6 +278,96 @@ WHERE filename ILIKE '%reporte%';
 | Enlace Gmail | `#all/<messageId>` | Puede unificarse a `#inbox/<threadId>` en F3 |
 
 Estas diferencias no bloquean las fases siguientes.
+
+---
+
+## Solución de problemas — credencial Gmail
+
+| Error | Guía |
+|-------|------|
+| `Credential with ID "…" does not exist for type "gmailOAuth2"` | [desafios_gmail.md](./desafios_gmail.md) |
+| Google OAuth2 vs Gmail OAuth2 API | [desafios_gmail.md](./desafios_gmail.md) |
+
+---
+
+## Solución de problemas — "Lost connection to the server" al ejecutar
+
+Ese mensaje casi siempre indica que **se cortó el WebSocket** entre el navegador y
+n8n (`/automatico/rest/push`) o que el **contenedor reinició** durante la ejecución.
+
+### 1. Comprobar WebSocket (ztrack.app)
+
+En el navegador: **F12 → Network → WS**. Debe existir una conexión a:
+
+```
+wss://ztrack.app/automatico/rest/push
+```
+
+Estado esperado: **101** (conectado). Si ves **404** o se cierra al pulsar Play →
+Apache no proxya bien el WebSocket.
+
+**Corrección en ztrack.app** — rutas **en este orden** (ver
+`infra/apache-ztrack-automatico.conf`):
+
+```apache
+ProxyPass        /automatico/rest/push ws://161.132.53.51:7001/rest/push
+ProxyPassReverse /automatico/rest/push ws://161.132.53.51:7001/rest/push
+
+ProxyPass        /automatico/ http://161.132.53.51:7001/
+ProxyPassReverse /automatico/ http://161.132.53.51:7001/
+```
+
+```bash
+sudo apache2ctl configtest && sudo systemctl reload apache2
+```
+
+### 2. Comprobar si n8n crashea al ejecutar
+
+En **161.132.53.51**, mientras das Play:
+
+```bash
+cd infra
+docker compose logs -f n8n-telemetria
+```
+
+Si aparece error de memoria, Gmail API o reinicio del contenedor, el fallo no es
+solo del proxy.
+
+### 3. Probar un nodo aislado
+
+En el canvas: nodo **Configuración** → **Execute step** (debe OK).  
+Luego **Construir consulta Gmail** → Execute step.  
+Después **Leer Gmail** → Execute step.
+
+Así ves en qué nodo falla (Gmail, Postgres, etc.).
+
+### 4. Errores frecuentes por nodo
+
+| Síntoma | Causa probable |
+|---------|----------------|
+| Lost connection + WS OK | Gmail/Postgres tarda mucho; subir `ProxyTimeout 600` |
+| WS 404 en `/automatico/rest/push` | Falta `ProxyPass` WebSocket (paso 1) |
+| Postgres "connection refused" | Host debe ser `postgres-telemetria`, no `localhost` |
+| Gmail "unauthorized" | Credencial **Gmail OAuth2 API**, reconectar cuenta |
+| Campos vacíos en Normalizar (`from_address`, `subject`, …) | Normalizador desactualizado; ver [desafios_normalizar_correo.md](./desafios_normalizar_correo.md) |
+| **Obtener IDs en BD** “Success” pero **0 items** y flujo parado | Desconectar Postgres → Listar; usar ramas paralelas desde Construir (ver [desafios_procesamiento_incremental.md](./desafios_procesamiento_incremental.md)) |
+| `Column 'attachments' does not exist` | Falta nodo **Preparar trazabilidad** antes de Guardar trazabilidad (ver abajo) |
+
+### Error: `Column 'attachments' does not exist in selected table`
+
+**Normalizar correo** incluye `attachments[]` para la rama de adjuntos. El nodo
+Postgres con **Auto-map** intenta insertar **todos** los campos, pero `email_trace`
+no tiene columna `attachments`.
+
+**Solución en n8n (sin reimportar):**
+
+1. Añade un nodo **Code** entre **Normalizar correo** y **Guardar trazabilidad**.
+2. Nómbralo **Preparar trazabilidad**.
+3. Pega el código de `code-nodes/04-preparar-trace.js`.
+4. Conecta: Normalizar → Preparar trazabilidad → Guardar trazabilidad.
+5. Normalizar → Expandir adjuntos (sin cambios).
+
+O reimporta `workflow.json` actualizado del repo.
 
 ---
 

@@ -17,7 +17,10 @@ de fases se implementan siguiendo las guías paso a paso.
 | [plan_fases_telemetria.md](./plan_fases_telemetria.md) | Visión, arquitectura, criterios de éxito y riesgos por fase |
 | [fase_0.md](./fase_0.md) | Infraestructura: n8n :7001, proxy `/automatico/`, PostgreSQL, OAuth |
 | [fase_0_implicancias.md](./fase_0_implicancias.md) | Topología, subruta, WebSocket, OAuth, riesgos |
-| [fase_0_implicancias_postgres_docker.md](./fase_0_implicancias_postgres_docker.md) | Postgres + Adminer en Docker (:7901) |
+| [desafios_gmail.md](./desafios_gmail.md) | Credenciales Gmail: ID huérfano, tipos, OAuth |
+| [desafios_normalizar_correo.md](./desafios_normalizar_correo.md) | Campos vacíos tras Normalizar: formato n8n vs API Gmail |
+| [desafios_procesamiento_incremental.md](./desafios_procesamiento_incremental.md) | No reprocesar correos ya en BD; búsqueda ligera vs cuerpo completo |
+| [desafios_busqueda_incremental.md](./desafios_busqueda_incremental.md) | Modo incremental, rango de fechas, PDF, posiciones de keywords |
 | [fase_1.md](./fase_1.md) | Lectura de Gmail, esquema BD, workflow base, anti-duplicados |
 | [fase_2.md](./fase_2.md) | Filtro por palabras clave configurable |
 | [fase_3.md](./fase_3.md) | Notificación por Telegram (MVP visible) |
@@ -92,7 +95,8 @@ telemetria-n8n/
 ├── code-nodes/
 │   ├── 01-construir-consulta.js    Arma la búsqueda Gmail (hoy / rango)
 │   ├── 02-normalizar.js            Extrae solo texto + referencias de adjuntos
-│   └── 03-expandir-adjuntos.js     Una fila por referencia de adjunto
+│   ├── 03-expandir-adjuntos.js     Una fila por referencia de adjunto
+│   └── 04-preparar-trace.js        Quita attachments antes del insert Postgres
 └── README.md
 ```
 
@@ -123,10 +127,8 @@ Leer Gmail (Get Many)     ← Simplify = OFF (mensaje completo)
       │
       ▼
 Normalizar correo         ← SOLO texto + referencias de adjuntos
-      ├──────────────► Guardar trazabilidad          (tabla email_trace)
-      │
-      ▼
-Expandir adjuntos ──────► Guardar referencia adjuntos (tabla email_attachment_ref)
+      ├─► Preparar trazabilidad → Guardar trazabilidad (email_trace)
+      └─► Expandir adjuntos → Guardar referencia adjuntos
 ```
 
 Los **adjuntos e imágenes NO se almacenan como datos del sistema**: solo su

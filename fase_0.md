@@ -217,7 +217,8 @@ https://ztrack.app/automatico/rest/oauth2-credential/callback
 
 ### 4.3 Credencial en n8n
 
-1. `https://ztrack.app/automatico/` → **Credentials → Gmail OAuth2**
+1. `https://ztrack.app/automatico/` → **Credentials → Add credential → Gmail OAuth2 API**
+   (no uses "Google OAuth2 API" — el nodo Gmail no la lista)
 2. Client ID + Client Secret
 3. Scope inicial: `https://www.googleapis.com/auth/gmail.readonly`
 4. **Connect my account**
