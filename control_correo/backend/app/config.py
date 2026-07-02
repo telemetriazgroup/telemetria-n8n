@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     total_program_days: int = 546
 
     control_poll_interval_sec: int = 600
-    control_exec_timeout_min: int = 15
+    control_watchdog_interval_sec: int = 120
+    control_exec_timeout_min: int = 10
     scheduler_enabled: bool = True  # env: SCHEDULER_ENABLED
 
     n8n_base_url: str = "http://n8n-telemetria:5678"

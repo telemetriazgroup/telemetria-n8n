@@ -83,7 +83,7 @@ export default function App({ page }: { page: Page }) {
   if (error) return <p className="error">{error}</p>;
 
   if (page === "dashboard" && dash) {
-    const pollMin = Math.round(dash.poll_interval_sec / 60);
+    const pollMin = Math.round(dash.watchdog_interval_sec / 60);
     return (
       <section>
         <h1>Dashboard histórico</h1>
@@ -114,7 +114,7 @@ export default function App({ page }: { page: Page }) {
               {dash.paused ? "PAUSADA" : "ACTIVA"}
             </span>
             {dash.scheduler_enabled
-              ? ` — ciclo cada ${pollMin} min`
+              ? ` — watchdog cada ${pollMin} min (timeout ${dash.exec_timeout_min} min)`
               : " — scheduler deshabilitado en servidor"}
           </p>
           {dash.last_poll_at && (
@@ -142,6 +142,14 @@ export default function App({ page }: { page: Page }) {
               }
             >
               Probar enlace n8n
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={busy}
+              onClick={() => runAction(async () => postJson("/runs/reconcile"))}
+            >
+              Reconciliar logs
             </button>
             {dash.paused ? (
               <button
@@ -404,7 +412,8 @@ export default function App({ page }: { page: Page }) {
     <section>
       <h1>Log de ejecuciones</h1>
       <p className="muted">
-        Inicios, pausas, reanudaciones, cancelaciones y pruebas de enlace n8n.
+        Inicios, pausas, reanudaciones, cancelaciones, timeouts y pruebas n8n. Solo
+        debe haber una fila «En curso» a la vez.
       </p>
       <div className="table-wrap">
         <table>

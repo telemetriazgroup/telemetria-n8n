@@ -1,11 +1,10 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import (
-    ControlRun,
     count_completed,
     get_db,
     get_or_create_state,
@@ -14,6 +13,16 @@ from app.database import (
 )
 from app.schemas import N8nTestOut, RunOut
 from app.services.n8n_client import N8nClient
+from app.services.sync_manager import (
+    evaluate_active_run,
+    finalize_run,
+    get_active_running_run,
+    launch_window,
+    log_control_event,
+    reconcile_orphan_runs,
+    stop_n8n_executions,
+    try_launch_next,
+)
 
 router = APIRouter(prefix="/api/v1/runs", tags=["runs"])
 _n8n = N8nClient()
@@ -31,42 +40,15 @@ def _window_for_log(state, db: Session) -> tuple[date, date]:
     return ws, we
 
 
-def _log_event(
-    db: Session,
-    *,
-    action: str,
-    status: str,
-    note: str,
-    window_start: date,
-    window_end: date,
-    execution_id: str | None = None,
-    finished: bool = True,
-) -> ControlRun:
-    now = datetime.now(timezone.utc)
-    before = count_completed(db)
-    run = ControlRun(
-        started_at=now,
-        finished_at=now if finished else None,
-        window_start=window_start,
-        window_end=window_end,
-        days_completed_before=before,
-        days_completed_after=before if finished else None,
-        action=action,
-        status=status,
-        n8n_execution_id=execution_id,
-        note=note,
-    )
-    db.add(run)
-    return run
-
-
 @router.get("/current")
 def current_run(db: Session = Depends(get_db)) -> dict:
     state = get_or_create_state(db)
     running = _n8n.list_running_executions() if _n8n.configured() else []
+    active = get_active_running_run(db)
     return {
         "paused": state.paused,
         "active_n8n_execution_id": state.active_n8n_execution_id,
+        "active_run_id": active.id if active else None,
         "current_window_start": state.current_window_start,
         "current_window_end": state.current_window_end,
         "last_poll_at": state.last_poll_at,
@@ -76,6 +58,8 @@ def current_run(db: Session = Depends(get_db)) -> dict:
 
 @router.get("", response_model=list[RunOut])
 def list_runs(limit: int = 100, db: Session = Depends(get_db)) -> list[RunOut]:
+    from app.database import ControlRun
+
     rows = (
         db.query(ControlRun)
         .order_by(ControlRun.started_at.desc())
@@ -117,7 +101,7 @@ def test_n8n(db: Session = Depends(get_db)) -> N8nTestOut:
         parts.append(f"webhook: {result['webhook_detail']}")
     if result.get("api_detail"):
         parts.append(result["api_detail"])
-    _log_event(
+    log_control_event(
         db,
         action="wait",
         status="completed" if result["overall_ok"] else "failed",
@@ -134,7 +118,7 @@ def pause(db: Session = Depends(get_db)) -> dict:
     state = get_or_create_state(db)
     ws, we = _window_for_log(state, db)
     state.paused = True
-    _log_event(
+    log_control_event(
         db,
         action="stop",
         status="completed",
@@ -151,11 +135,11 @@ def resume(db: Session = Depends(get_db)) -> dict:
     state = get_or_create_state(db)
     ws, we = _window_for_log(state, db)
     state.paused = False
-    _log_event(
+    log_control_event(
         db,
         action="launch",
         status="completed",
-        note="Sincronización reanudada — ciclo automático cada 10 min",
+        note="Sincronización reanudada — watchdog cada 2 min",
         window_start=ws,
         window_end=we,
     )
@@ -172,6 +156,14 @@ def trigger_manual(body: TriggerRequest, db: Session = Depends(get_db)) -> dict:
             "Pausa la sincronización automática antes de elegir fechas manuales",
         )
 
+    active = get_active_running_run(db)
+    if active:
+        raise HTTPException(
+            409,
+            f"Ya hay una sincronización en curso (ventana {active.window_start}→"
+            f"{active.window_end}). Cancélala antes de lanzar otra.",
+        )
+
     prog_start, prog_end = program_range()
     start = body.start_date
     end = body.end_date or min(start + timedelta(days=1), prog_end)
@@ -185,39 +177,25 @@ def trigger_manual(body: TriggerRequest, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(503, "n8n no configurado (webhook o API key + workflow id)")
 
     before = count_completed(db)
-    try:
-        execution_id = _n8n.trigger_historical(start.isoformat(), end.isoformat())
-    except Exception as exc:
-        _log_event(
-            db,
-            action="launch",
-            status="failed",
-            note=f"Inicio manual fallido {start}→{end}: {exc}",
-            window_start=start,
-            window_end=end,
-        )
-        db.commit()
-        raise HTTPException(502, f"Error al lanzar n8n: {exc}") from exc
-
-    _log_event(
+    run = launch_window(
         db,
-        action="launch",
-        status="running",
-        note=f"Inicio manual de sincronización {start} → {end}",
-        window_start=start,
-        window_end=end,
-        execution_id=execution_id,
-        finished=False,
+        state,
+        start,
+        end,
+        "launch",
+        f"Inicio manual de sincronización {start} → {end}",
     )
-    state.current_window_start = start
-    state.current_window_end = end
-    state.active_n8n_execution_id = execution_id
+    if not run or run.status != "running":
+        db.commit()
+        raise HTTPException(502, run.note if run else "No se pudo lanzar")
+
     db.commit()
     return {
         "started": True,
         "window_start": start.isoformat(),
         "window_end": end.isoformat(),
-        "n8n_execution_id": execution_id,
+        "n8n_execution_id": run.n8n_execution_id,
+        "run_id": run.id,
         "days_completed_before": before,
     }
 
@@ -226,45 +204,64 @@ def trigger_manual(body: TriggerRequest, db: Session = Depends(get_db)) -> dict:
 def cancel_sync(db: Session = Depends(get_db)) -> dict:
     state = get_or_create_state(db)
     ws, we = _window_for_log(state, db)
-    stopped: list[str] = []
+    active = get_active_running_run(db)
+    stopped = stop_n8n_executions(state)
 
-    if state.active_n8n_execution_id:
-        try:
-            _n8n.stop_execution(state.active_n8n_execution_id)
-            stopped.append(state.active_n8n_execution_id)
-        except Exception as exc:
-            _log_event(
-                db,
-                action="stop",
-                status="failed",
-                note=f"Error al cancelar ejecución n8n: {exc}",
-                window_start=ws,
-                window_end=we,
-                execution_id=state.active_n8n_execution_id,
-            )
-            db.commit()
-            raise HTTPException(502, str(exc)) from exc
+    if active:
+        ids_note = ", ".join(stopped) if stopped else "sin detener en n8n"
+        finalize_run(
+            db,
+            active,
+            status="cancelled",
+            note=f"Sincronización cancelada desde la interfaz (n8n: {ids_note})",
+        )
+    else:
+        ids_note = ", ".join(stopped) if stopped else "ninguna activa"
+        log_control_event(
+            db,
+            action="stop",
+            status="cancelled",
+            note=f"Cancelación solicitada (n8n: {ids_note})",
+            window_start=ws,
+            window_end=we,
+            execution_id=state.active_n8n_execution_id,
+        )
 
-    for ex in _n8n.list_running_executions():
-        eid = str(ex.get("id", ""))
-        if eid and eid not in stopped:
-            try:
-                _n8n.stop_execution(eid)
-                stopped.append(eid)
-            except Exception:
-                pass
-
-    prev_id = state.active_n8n_execution_id
-    state.active_n8n_execution_id = None
-    ids_note = ", ".join(stopped) if stopped else (prev_id or "ninguna activa")
-    _log_event(
-        db,
-        action="stop",
-        status="cancelled",
-        note=f"Sincronización cancelada desde la interfaz (n8n: {ids_note})",
-        window_start=ws,
-        window_end=we,
-        execution_id=prev_id,
-    )
     db.commit()
     return {"cancelled": True, "stopped_executions": stopped}
+
+
+@router.post("/reconcile")
+def reconcile_runs(db: Session = Depends(get_db)) -> dict:
+    """Cierra runs «en curso» huérfanos y reevalúa la ventana activa."""
+    state = get_or_create_state(db)
+    fixed = reconcile_orphan_runs(db)
+    result = evaluate_active_run(db, state)
+    launched = False
+    if not state.paused:
+        if result == "completed":
+            launched = try_launch_next(db, state) is not None
+        elif result == "timeout":
+            ws, we = state.current_window_start, state.current_window_end
+            if ws and we and not get_active_running_run(db):
+                launched = (
+                    launch_window(
+                        db,
+                        state,
+                        ws,
+                        we,
+                        "retry_same",
+                        f"Reconcile: reintento {ws}–{we} tras timeout",
+                    )
+                    is not None
+                )
+        elif result is None:
+            launched = try_launch_next(db, state) is not None
+    db.commit()
+    active = get_active_running_run(db)
+    return {
+        "orphans_closed": fixed,
+        "evaluation": result,
+        "launched": launched,
+        "active_run_id": active.id if active else None,
+    }

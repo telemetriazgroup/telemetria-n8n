@@ -33,6 +33,8 @@ export type Dashboard = {
   program_range_start: string;
   program_range_end: string;
   poll_interval_sec: number;
+  watchdog_interval_sec: number;
+  exec_timeout_min: number;
   scheduler_enabled: boolean;
 };
 

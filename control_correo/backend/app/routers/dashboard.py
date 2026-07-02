@@ -46,5 +46,7 @@ def dashboard(db: Session = Depends(get_db)) -> DashboardOut:
         program_range_start=start,
         program_range_end=end,
         poll_interval_sec=settings.control_poll_interval_sec,
+        watchdog_interval_sec=settings.control_watchdog_interval_sec,
+        exec_timeout_min=settings.control_exec_timeout_min,
         scheduler_enabled=settings.scheduler_enabled,
     )

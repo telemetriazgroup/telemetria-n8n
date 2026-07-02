@@ -21,6 +21,8 @@ class DashboardOut(BaseModel):
     program_range_start: date
     program_range_end: date
     poll_interval_sec: int
+    watchdog_interval_sec: int
+    exec_timeout_min: int
     scheduler_enabled: bool
 
 
