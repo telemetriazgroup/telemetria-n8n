@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import EmailThreadView from "./EmailThreadView";
 import { TraceDetail, fetchJson } from "./api";
 
 type Props = {
@@ -9,6 +10,7 @@ type Props = {
 export default function TraceDetailModal({ messageId, onClose }: Props) {
   const [detail, setDetail] = useState<TraceDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [viewRaw, setViewRaw] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,7 +31,7 @@ export default function TraceDetailModal({ messageId, onClose }: Props) {
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
-        className="modal"
+        className="modal modal-wide"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -61,24 +63,48 @@ export default function TraceDetailModal({ messageId, onClose }: Props) {
               <dd>{detail.match_person_keyword ?? "—"}</dd>
             </dl>
 
-            {detail.match_telemetria_excerpt && (
-              <section>
-                <h3>Extracto telemetría</h3>
-                <pre className="excerpt">{detail.match_telemetria_excerpt}</pre>
-              </section>
-            )}
-            {detail.match_person_excerpt && (
-              <section>
-                <h3>Extracto persona</h3>
-                <pre className="excerpt">{detail.match_person_excerpt}</pre>
+            {(detail.match_telemetria_excerpt || detail.match_person_excerpt) && (
+              <section className="thread-excerpts">
+                {detail.match_telemetria_excerpt && (
+                  <div>
+                    <h3>Extracto telemetría</h3>
+                    <pre className="excerpt">{detail.match_telemetria_excerpt}</pre>
+                  </div>
+                )}
+                {detail.match_person_excerpt && (
+                  <div>
+                    <h3>Extracto persona</h3>
+                    <pre className="excerpt">{detail.match_person_excerpt}</pre>
+                  </div>
+                )}
               </section>
             )}
 
             <section>
-              <h3>Contenido</h3>
-              <pre className="body-text">
-                {detail.body_text?.trim() || detail.snippet || "(sin cuerpo)"}
-              </pre>
+              <div className="section-head">
+                <h3>Hilo de correo</h3>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setViewRaw((v) => !v)}
+                >
+                  {viewRaw ? "Ver hilo estructurado" : "Ver texto plano"}
+                </button>
+              </div>
+              {viewRaw ? (
+                <pre className="body-text">
+                  {detail.body_text?.trim() || detail.snippet || "(sin cuerpo)"}
+                </pre>
+              ) : (
+                <EmailThreadView
+                  bodyText={detail.body_text}
+                  snippet={detail.snippet}
+                  fromAddress={detail.from_address}
+                  subject={detail.subject}
+                  matchTelemetriaExcerpt={detail.match_telemetria_excerpt}
+                  matchPersonExcerpt={detail.match_person_excerpt}
+                />
+              )}
             </section>
 
             {detail.attachments?.length > 0 && (

@@ -203,6 +203,152 @@ td {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
+.modal-wide {
+  width: min(980px, 100%);
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.section-head h3 {
+  margin: 0;
+}
+
+.btn-sm {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+.thread-flow-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.thread-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.thread-msg {
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0f1419;
+}
+
+.thread-msg-latest {
+  border-color: #3fb950;
+  box-shadow: 0 0 0 1px rgba(63, 185, 80, 0.25);
+}
+
+.thread-msg-quoted {
+  margin-left: 0.75rem;
+  border-left: 3px solid #2d3748;
+}
+
+.thread-msg-header {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  padding: 0.65rem 0.85rem;
+  background: #1a2332;
+  border: none;
+  color: #e8eaed;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.thread-msg-header:hover {
+  background: #243044;
+}
+
+.thread-msg-badge {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #6cb6ff;
+  white-space: nowrap;
+}
+
+.thread-msg-latest .thread-msg-badge {
+  color: #3fb950;
+}
+
+.thread-msg-sender {
+  font-weight: 600;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-msg-date {
+  font-size: 0.78rem;
+  color: #9aa4b2;
+  white-space: nowrap;
+}
+
+.thread-msg-toggle {
+  color: #9aa4b2;
+}
+
+.thread-msg-body {
+  padding: 0.75rem 0.85rem 0.85rem;
+  border-top: 1px solid #2d3748;
+}
+
+.thread-msg-subject {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+.thread-msg-meta {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+}
+
+.thread-msg-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.thread-highlight {
+  background: rgba(210, 153, 34, 0.35);
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.thread-excerpts {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 640px) {
+  .thread-msg-header {
+    grid-template-columns: 1fr auto;
+  }
+
+  .thread-msg-date {
+    grid-column: 1 / -1;
+  }
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
