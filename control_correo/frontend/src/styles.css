@@ -39,7 +39,7 @@ main {
   background: #1a2332;
   padding: 1rem 1.25rem;
   border-radius: 8px;
-  max-width: 520px;
+  max-width: 560px;
 }
 
 .progress {
@@ -66,6 +66,12 @@ td {
   border-bottom: 1px solid #2d3748;
   padding: 0.5rem;
   text-align: left;
+  vertical-align: top;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  margin-top: 1rem;
 }
 
 .muted {
@@ -74,4 +80,166 @@ td {
 
 .error {
   color: #f85149;
+}
+
+.status-ok {
+  color: #3fb950;
+}
+
+.status-pending {
+  color: #9aa4b2;
+}
+
+.status-warn {
+  color: #d29922;
+}
+
+.status-error {
+  color: #f85149;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  margin: 1rem 0;
+}
+
+.toolbar label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.toolbar select,
+.toolbar input[type="date"] {
+  background: #1a2332;
+  color: #e8eaed;
+  border: 1px solid #2d3748;
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+}
+
+.btn-row {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.btn {
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #238636;
+  color: #fff;
+}
+
+.btn-danger {
+  background: #da3633;
+  color: #fff;
+}
+
+.btn-ghost {
+  background: #2d3748;
+  color: #e8eaed;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 100;
+}
+
+.modal {
+  background: #1a2332;
+  border-radius: 10px;
+  width: min(920px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #2d3748;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.modal-body {
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.modal-body section {
+  margin-top: 1rem;
+}
+
+.modal-body h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 0.35rem 0.75rem;
+  margin: 0;
+}
+
+.meta-grid dt {
+  color: #9aa4b2;
+}
+
+.meta-grid dd {
+  margin: 0;
+}
+
+.body-text,
+.excerpt {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #0f1419;
+  border: 1px solid #2d3748;
+  border-radius: 6px;
+  padding: 0.75rem;
+  max-height: 360px;
+  overflow: auto;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.modal-actions {
+  margin-top: 1rem;
+}
+
+.modal-actions a.btn {
+  text-decoration: none;
+  display: inline-block;
+}
+
+code {
+  font-size: 0.85em;
 }

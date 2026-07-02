@@ -42,4 +42,6 @@ def dashboard(db: Session = Depends(get_db)) -> DashboardOut:
         n8n_configured=_n8n.configured(),
         program_range_start=start,
         program_range_end=end,
+        poll_interval_sec=settings.control_poll_interval_sec,
+        scheduler_enabled=settings.scheduler_enabled,
     )

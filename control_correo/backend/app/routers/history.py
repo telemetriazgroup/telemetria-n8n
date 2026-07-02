@@ -1,18 +1,14 @@
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.database import count_completed, fetch_completed_dates, get_db, get_or_create_state, program_range
-from app.schemas import DashboardOut, HistoryDayOut, HistorySummaryMonth
-from app.services.n8n_client import N8nClient
-from app.services.planner import decide_window
+from app.database import get_db, month_enabled, program_range
+from app.schemas import HistoryDayOut, HistoryPlanDay, HistorySummaryMonth
 
 router = APIRouter(prefix="/api/v1/history", tags=["history"])
-_n8n = N8nClient()
 
 
 @router.get("/days", response_model=list[HistoryDayOut])
@@ -38,6 +34,62 @@ def list_days(
         {"df": df, "dt": dt},
     ).mappings().all()
     return [HistoryDayOut(**dict(r)) for r in rows]
+
+
+@router.get("/plan", response_model=list[HistoryPlanDay])
+def plan_days(
+    date_from: Optional[date] = Query(None, alias="from"),
+    date_to: Optional[date] = Query(None, alias="to"),
+    db: Session = Depends(get_db),
+) -> list[HistoryPlanDay]:
+    """Todos los días programados en el rango, con estado desde email_history_day o pending."""
+    start, end = program_range()
+    df = date_from or start
+    dt = date_to or end
+    rows = db.execute(
+        text(
+            """
+            SELECT analyzed_date, status, emails_listed_count,
+                   emails_processed_count, emails_match_count, analyzed_at
+            FROM email_history_day
+            WHERE analyzed_date >= :df AND analyzed_date <= :dt
+            """
+        ),
+        {"df": df, "dt": dt},
+    ).mappings().all()
+    by_date = {r["analyzed_date"]: r for r in rows}
+
+    out: list[HistoryPlanDay] = []
+    d = max(df, start)
+    last = min(dt, end)
+    while d <= last:
+        if month_enabled(db, d):
+            row = by_date.get(d)
+            if row:
+                out.append(
+                    HistoryPlanDay(
+                        analyzed_date=row["analyzed_date"],
+                        status=row["status"],
+                        emails_listed_count=row["emails_listed_count"],
+                        emails_processed_count=row["emails_processed_count"],
+                        emails_match_count=row["emails_match_count"],
+                        analyzed_at=row["analyzed_at"],
+                        scheduled=True,
+                    )
+                )
+            else:
+                out.append(
+                    HistoryPlanDay(
+                        analyzed_date=d,
+                        status="pending",
+                        emails_listed_count=0,
+                        emails_processed_count=0,
+                        emails_match_count=0,
+                        scheduled=True,
+                    )
+                )
+        d += timedelta(days=1)
+    return out
 
 
 @router.get("/days/{day}", response_model=HistoryDayOut)

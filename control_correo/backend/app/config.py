@@ -8,8 +8,8 @@ class Settings(BaseSettings):
         "postgresql://telemetria_app:changeme@postgres-telemetria:5432/telemetria"
     )
 
-    program_range_start: str = "2026-01-01"
-    program_range_end: str = "2027-06-30"
+    program_range_start: str = "2025-01-01"
+    program_range_end: str = "2026-06-30"
     total_program_days: int = 546
 
     control_poll_interval_sec: int = 600

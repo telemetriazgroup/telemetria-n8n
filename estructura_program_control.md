@@ -315,7 +315,36 @@ curl -sS -X POST 'http://n8n-telemetria:5678/webhook/historico-run' \
 
 **Importante:** activar el workflow en n8n para que `/webhook/` (no `-test`) responda.
 
-### Fallback API
+### Error 404 — `webhook "POST historico-run" is not registered`
+
+n8n devuelve esto cuando **no hay ningún workflow activo** que exponga ese path.
+
+Checklist:
+
+1. **Reimportar** `workflow_ok.json` (debe existir el nodo **Webhook histórico**).
+2. Abrir el workflow **Telemetria - Trazabilidad de correos (OK)** en n8n.
+3. Arriba a la derecha: interruptor **Inactive → Active** (verde).
+4. Volver a ejecutar el `curl` a `/webhook/historico-run` (sin `-test`).
+
+Si aún no quieres activarlo en producción:
+
+1. Abre el nodo **Webhook histórico** en el editor.
+2. Pulsa **Listen for test event** (escuchar).
+3. En esa ventana usa la URL **Test** y prueba con:
+
+```bash
+curl -sS -X POST 'https://ztrack.app/automatico/webhook-test/historico-run' \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"historical","startDate":"2026-01-16","endDate":"2026-01-17"}'
+```
+
+La URL de **test** solo funciona mientras el editor está escuchando; **control_correo**
+en producción necesita el workflow **activo** y `/webhook/historico-run`.
+
+Verificar en el canvas que existan: `Webhook histórico` → `Config histórico API` →
+`Obtener días analizados`.
+
+---
 
 Si el webhook devuelve 404 y están configurados `N8N_API_KEY` + `N8N_WORKFLOW_ID`,
 `control-correo-api` usa `POST /api/v1/workflows/{id}/run`.

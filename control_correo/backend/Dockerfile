@@ -9,6 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+RUN mkdir -p /app/migrations
+COPY migrations/06-control-correo.sql /app/migrations/06-control-correo.sql
+COPY migrations/07-control-correo-range-2025.sql /app/migrations/07-control-correo-range-2025.sql
+
 COPY app ./app
 
 ENV PYTHONUNBUFFERED=1

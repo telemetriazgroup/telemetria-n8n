@@ -8,9 +8,11 @@ Orquestador histórico Gmail → n8n + panel web.
 ## Arranque rápido
 
 ```bash
-# 1. Migración BD (una vez)
+# 1. Migración BD (una vez, o automática al arrancar control-correo-api)
 docker exec -i postgres-telemetria psql -U telemetria_app -d telemetria \
   < infra/postgres/06-control-correo.sql
+docker exec -i postgres-telemetria psql -U telemetria_app -d telemetria \
+  < infra/postgres/07-control-correo-range-2025.sql
 
 # 2. Variables en infra/.env (N8N_API_KEY, N8N_WORKFLOW_ID)
 

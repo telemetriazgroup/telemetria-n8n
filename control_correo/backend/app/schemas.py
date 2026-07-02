@@ -18,6 +18,8 @@ class DashboardOut(BaseModel):
     n8n_configured: bool
     program_range_start: date
     program_range_end: date
+    poll_interval_sec: int
+    scheduler_enabled: bool
 
 
 class HistoryDayOut(BaseModel):
@@ -26,8 +28,18 @@ class HistoryDayOut(BaseModel):
     emails_listed_count: int
     emails_processed_count: int
     emails_match_count: int
-    analyzed_at: datetime
+    analyzed_at: Optional[datetime] = None
     gmail_query: Optional[str] = None
+
+
+class HistoryPlanDay(BaseModel):
+    analyzed_date: date
+    status: str
+    emails_listed_count: int
+    emails_processed_count: int
+    emails_match_count: int
+    analyzed_at: Optional[datetime] = None
+    scheduled: bool = True
 
 
 class HistorySummaryMonth(BaseModel):
@@ -47,7 +59,7 @@ class TraceOut(BaseModel):
     match_telemetria_keyword: Optional[str]
     match_person_keyword: Optional[str]
     gmail_link: Optional[str]
-    reviewed_at: datetime
+    reviewed_at: Optional[datetime] = None
 
 
 class TraceDetailOut(TraceOut):

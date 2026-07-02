@@ -24,6 +24,7 @@ services:
       - postgres_telemetria_data:/var/lib/postgresql/data
       # Tablas email_trace / email_attachment_ref al primer arranque
       - ../schema.sql:/docker-entrypoint-initdb.d/02-schema.sql:ro
+      - ./postgres/06-control-correo.sql:/docker-entrypoint-initdb.d/06-control-correo.sql:ro
     networks:
       - telemetria-net
     healthcheck:
@@ -103,8 +104,8 @@ services:
       CONTROL_POLL_INTERVAL_SEC: ${CONTROL_POLL_INTERVAL_SEC:-600}
       CONTROL_EXEC_TIMEOUT_MIN: ${CONTROL_EXEC_TIMEOUT_MIN:-15}
       SCHEDULER_ENABLED: ${CONTROL_SCHEDULER_ENABLED:-true}
-      PROGRAM_RANGE_START: ${PROGRAM_RANGE_START:-2026-01-01}
-      PROGRAM_RANGE_END: ${PROGRAM_RANGE_END:-2027-06-30}
+      PROGRAM_RANGE_START: ${PROGRAM_RANGE_START:-2025-01-01}
+      PROGRAM_RANGE_END: ${PROGRAM_RANGE_END:-2026-06-30}
       CORS_ORIGINS: ${CONTROL_CORS_ORIGINS:-http://localhost:7201,http://161.132.53.51:7201}
     networks:
       - telemetria-net

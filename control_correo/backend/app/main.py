@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.db_migrate import ensure_control_schema
 from app.routers import dashboard, history, runs, schedule, trace
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -13,6 +14,7 @@ logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    ensure_control_schema()
     start_scheduler()
     yield
     stop_scheduler()
