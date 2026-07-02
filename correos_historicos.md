@@ -146,6 +146,22 @@ buscarlos.
 1. En **Configuración** pon `mode = historical` y las fechas.
 2. Ejecuta manualmente (no uses el cron con `historical`).
 
+### Opción C — Webhook (control_correo / API)
+
+1. Reimporta `workflow_ok.json` y **activa** el workflow.
+2. `POST` al webhook con fechas dinámicas:
+
+```bash
+curl -X POST 'https://ztrack.app/automatico/webhook/historico-run' \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"historical","startDate":"2026-01-16","endDate":"2026-01-17"}'
+```
+
+Equivalente interno Docker: `http://n8n-telemetria:5678/webhook/historico-run`.
+
+Detalle: [estructura_program_control.md](./estructura_program_control.md) · nodo
+**Config histórico API** (`code-nodes/00c-webhook-config-historico.js`).
+
 ---
 
 ## Día sin correos

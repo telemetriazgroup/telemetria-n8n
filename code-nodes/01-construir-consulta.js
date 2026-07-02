@@ -10,7 +10,7 @@ function nodeJson(nodeName) {
 }
 
 function getCfg() {
-  for (const name of ['Config histórico', 'Configuración']) {
+  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {
     const j = nodeJson(name);
     if (j && (j.mode || j.startDate !== undefined)) return j;
   }

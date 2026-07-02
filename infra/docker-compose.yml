@@ -1,7 +1,8 @@
 # Stack telemetría — 161.132.53.51
-#   n8n        → :7001  (raíz /)
-#   Adminer    → :7901  (UI PostgreSQL)
-#   Postgres   → solo red Docker (sin puerto público)
+#   n8n              → :7001  (raíz /)
+#   control-correo   → :7201  (UI React + API /api)
+#   Adminer          → :7901  (UI PostgreSQL)
+#   Postgres         → solo red Docker (sin puerto público)
 #
 #   cp .env.example .env && docker compose up -d
 
@@ -84,6 +85,47 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+
+  control-correo-api:
+    build:
+      context: ../control_correo/backend
+      dockerfile: Dockerfile
+    container_name: control-correo-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://telemetria_app:${TELEMETRIA_DB_PASSWORD}@postgres-telemetria:5432/telemetria
+      N8N_BASE_URL: http://n8n-telemetria:5678
+      N8N_API_KEY: ${N8N_API_KEY:-}
+      N8N_WORKFLOW_ID: ${N8N_WORKFLOW_ID:-}
+      N8N_WEBHOOK_PATH: ${N8N_WEBHOOK_PATH:-historico-run}
+      CONTROL_POLL_INTERVAL_SEC: ${CONTROL_POLL_INTERVAL_SEC:-600}
+      CONTROL_EXEC_TIMEOUT_MIN: ${CONTROL_EXEC_TIMEOUT_MIN:-15}
+      SCHEDULER_ENABLED: ${CONTROL_SCHEDULER_ENABLED:-true}
+      PROGRAM_RANGE_START: ${PROGRAM_RANGE_START:-2026-01-01}
+      PROGRAM_RANGE_END: ${PROGRAM_RANGE_END:-2027-06-30}
+      CORS_ORIGINS: ${CONTROL_CORS_ORIGINS:-http://localhost:7201,http://161.132.53.51:7201}
+    networks:
+      - telemetria-net
+    depends_on:
+      postgres-telemetria:
+        condition: service_healthy
+      n8n-telemetria:
+        condition: service_healthy
+
+  control-correo-web:
+    build:
+      context: ../control_correo/frontend
+      dockerfile: Dockerfile
+    container_name: control-correo-web
+    restart: unless-stopped
+    ports:
+      - "7201:80"
+    networks:
+      - telemetria-net
+    depends_on:
+      - control-correo-api
 
 volumes:
   n8n_telemetria_data:

@@ -3,6 +3,7 @@
 
 function getCfg() {
   const tryNames = [
+    'Config histórico API',
     'Config histórico', 'config histórico', 'Config Histórico',
     'Configuración', 'configuración', 'Configuracion'
   ];

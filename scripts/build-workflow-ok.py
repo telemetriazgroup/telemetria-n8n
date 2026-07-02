@@ -94,6 +94,21 @@ nodes = [
     },
     {
         'parameters': {
+            'httpMethod': 'POST',
+            'path': 'historico-run',
+            'responseMode': 'onReceived',
+            'options': {},
+        },
+        'id': 'node-webhook-hist',
+        'name': 'Webhook histórico',
+        'type': 'n8n-nodes-base.webhook',
+        'typeVersion': 2,
+        'position': [-200, 880],
+        'webhookId': 'telemetria-historico-run',
+    },
+    code_node('node-webhook-cfg', 'Config histórico API', [40, 880], '00c-webhook-config-historico.js'),
+    {
+        'parameters': {
             'assignments': {
                 'assignments': [
                     {'id': 'c1', 'name': 'mode', 'value': 'incremental', 'type': 'string'},
@@ -141,7 +156,10 @@ nodes = [
             '={{ $json.mode }}', 'historical'),
     pg_node('node-pg-analyzed', 'Obtener días analizados', [480, 360],
             "={{ (() => { "
-            "const c = ($('Config histórico').isExecuted ? $('Config histórico').first().json : $('Configuración').first().json); "
+            "const c = (() => { "
+            "for (const n of ['Config histórico API', 'Config histórico', 'Configuración']) { "
+            "try { if ($(n).isExecuted) return $(n).first().json; } catch(e) {} "
+            "} return $('Configuración').first().json; })(); "
             "const s = c.startDate; const e = c.endDate; "
             "return \"WITH done AS (SELECT analyzed_date FROM email_history_day WHERE status = 'completed' "
             "AND analyzed_date >= '\" + s + \"'::date AND analyzed_date <= '\" + e + \"'::date) "
@@ -179,7 +197,14 @@ nodes = [
     },
     code_node('node-filter-new', 'Filtrar solo nuevos', [1800, 600], '05-filtrar-solo-nuevos.js'),
     if_bool('node-if-empty-hist', '¿Día vacío histórico?', [2020, 600],
-            "={{ (() => { try { if ($('Config histórico').isExecuted) return $('Config histórico').first().json.mode === 'historical' && $json._empty === true; } catch(e) {} return $('Configuración').first().json.mode === 'historical' && $json._empty === true; })() }}"),
+            "={{ (() => { "
+            "for (const n of ['Config histórico API', 'Config histórico', 'Configuración']) { "
+            "try { "
+            "if ($(n).isExecuted && $(n).first().json.mode === 'historical' && $json._empty === true) "
+            "return true; "
+            "} catch(e) {} "
+            "} return false; "
+            "})() }}"),
     if_bool('node-if-has-id', '¿Hay correos nuevos?', [2020, 780],
             '={{ !!$json.id }}'),
     code_node('node-skip-empty', 'Omitir si vacío', [2240, 780], '06-skip-si-vacio.js'),
@@ -241,6 +266,8 @@ nodes = [
 connections = {
     'Programar revisión': {'main': [[{'node': 'Configuración', 'type': 'main', 'index': 0}]]},
     'Histórico manual': {'main': [[{'node': 'Config histórico', 'type': 'main', 'index': 0}]]},
+    'Webhook histórico': {'main': [[{'node': 'Config histórico API', 'type': 'main', 'index': 0}]]},
+    'Config histórico API': {'main': [[{'node': 'Obtener días analizados', 'type': 'main', 'index': 0}]]},
     'Config histórico': {'main': [[{'node': 'Obtener días analizados', 'type': 'main', 'index': 0}]]},
     'Reiniciar hoy': {'main': [[{'node': 'Config reinicio', 'type': 'main', 'index': 0}]]},
     'Config reinicio': {'main': [[{'node': 'Validar contraseña reset', 'type': 'main', 'index': 0}]]},

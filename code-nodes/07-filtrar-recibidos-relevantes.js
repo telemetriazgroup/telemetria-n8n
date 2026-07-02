@@ -8,7 +8,7 @@
 //   • Dos fragmentos independientes (telemetría + persona)
 
 function getCfg() {
-  for (const name of ['Config histórico', 'Configuración']) {
+  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {
     try {
       const j = $(name).first()?.json;
       if (j && (j.mode || j.startDate !== undefined)) return j;
