@@ -16,6 +16,8 @@ class DashboardOut(BaseModel):
     paused: bool
     last_poll_at: Optional[datetime]
     n8n_configured: bool
+    active_n8n_execution_id: Optional[str] = None
+    n8n_running_count: int = 0
     program_range_start: date
     program_range_end: date
     poll_interval_sec: int
@@ -91,3 +93,18 @@ class RunOut(BaseModel):
     days_completed_before: int
     days_completed_after: Optional[int]
     note: Optional[str]
+
+
+class N8nTestOut(BaseModel):
+    base_url: str
+    webhook_path: str
+    health_ok: bool
+    health_detail: str = ""
+    webhook_ok: bool
+    webhook_detail: str = ""
+    api_ok: bool
+    api_detail: str = ""
+    workflow_active: Optional[bool] = None
+    trigger_configured: bool
+    monitor_configured: bool
+    overall_ok: bool

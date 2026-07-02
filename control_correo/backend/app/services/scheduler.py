@@ -91,7 +91,7 @@ def poll_and_act() -> None:
                     days_completed_after=before,
                     action=action,
                     status="failed",
-                    note=str(exc),
+                    note=f"Inicio automático fallido: {exc}",
                 )
                 db.add(run)
                 db.commit()
@@ -109,7 +109,7 @@ def poll_and_act() -> None:
             action=action,
             status="running" if execution_id else "completed",
             n8n_execution_id=execution_id,
-            note=note,
+            note=f"Inicio automático scheduler — {note}",
         )
         state.current_window_start = plan.window_start
         state.current_window_end = plan.window_end

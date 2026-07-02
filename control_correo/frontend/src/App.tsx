@@ -3,11 +3,15 @@ import TraceDetailModal from "./TraceDetailModal";
 import {
   Dashboard,
   HistoryDay,
+  N8nTestResult,
   RunRow,
   TraceRow,
+  actionLabel,
+  addDays,
   fetchJson,
   postJson,
   statusClass,
+  statusLabel,
 } from "./api";
 
 type Page = "dashboard" | "history" | "trace" | "runs";
@@ -23,11 +27,19 @@ export default function App({ page }: { page: Page }) {
   const [historyFilter, setHistoryFilter] = useState<string>("all");
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [traceDate, setTraceDate] = useState<string>("");
+  const [n8nTest, setN8nTest] = useState<N8nTestResult | null>(null);
+  const [manualStart, setManualStart] = useState<string>("");
+  const [manualEnd, setManualEnd] = useState<string>("");
 
   const load = useCallback(async () => {
     setError(null);
     if (page === "dashboard") {
-      setDash(await fetchJson<Dashboard>("/dashboard"));
+      const d = await fetchJson<Dashboard>("/dashboard");
+      setDash(d);
+      if (!manualStart && d.first_pending) {
+        setManualStart(d.first_pending);
+        setManualEnd(addDays(d.first_pending, 1));
+      }
     } else if (page === "history") {
       const d = await fetchJson<Dashboard>("/dashboard");
       setDash(d);
@@ -38,9 +50,9 @@ export default function App({ page }: { page: Page }) {
       const q = traceDate ? `&from=${traceDate}&to=${traceDate}` : "";
       setTraces(await fetchJson<TraceRow[]>(`/trace?page_size=200${q}`));
     } else {
-      setRuns(await fetchJson<RunRow[]>("/runs"));
+      setRuns(await fetchJson<RunRow[]>("/runs?limit=100"));
     }
-  }, [page, historyYear, traceDate]);
+  }, [page, historyYear, traceDate, manualStart]);
 
   useEffect(() => {
     load().catch((e) => setError(String(e)));
@@ -50,17 +62,22 @@ export default function App({ page }: { page: Page }) {
     return () => clearInterval(t);
   }, [load]);
 
-  const toggleSync = async (pause: boolean) => {
+  const runAction = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError(null);
     try {
-      await postJson(pause ? "/runs/pause" : "/runs/resume");
+      await fn();
       await load();
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
     }
+  };
+
+  const onManualStartChange = (value: string) => {
+    setManualStart(value);
+    if (value) setManualEnd(addDays(value, 1));
   };
 
   if (error) return <p className="error">{error}</p>;
@@ -74,6 +91,7 @@ export default function App({ page }: { page: Page }) {
           Rango {dash.program_range_start} → {dash.program_range_end} ({dash.days_total}{" "}
           días programados)
         </p>
+
         <div className="card">
           <div className="progress">
             <div style={{ width: `${dash.percent}%` }} />
@@ -104,30 +122,127 @@ export default function App({ page }: { page: Page }) {
               Último poll: {new Date(dash.last_poll_at).toLocaleString()}
             </p>
           )}
-          <p>n8n API: {dash.n8n_configured ? "configurado" : "pendiente API key"}</p>
+          {dash.n8n_running_count > 0 && (
+            <p className="status-warn">
+              n8n en ejecución ({dash.n8n_running_count}) — id:{" "}
+              {dash.active_n8n_execution_id ?? "—"}
+            </p>
+          )}
+          <p>n8n: {dash.n8n_configured ? "configurado" : "pendiente webhook o API key"}</p>
 
           <div className="btn-row">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={busy}
+              onClick={() =>
+                runAction(async () => {
+                  setN8nTest(await postJson<N8nTestResult>("/runs/test-n8n"));
+                })
+              }
+            >
+              Probar enlace n8n
+            </button>
             {dash.paused ? (
               <button
                 type="button"
                 className="btn btn-primary"
                 disabled={busy}
-                onClick={() => toggleSync(false)}
+                onClick={() => runAction(async () => postJson("/runs/resume"))}
               >
-                Reanudar sincronización
+                Reanudar automático
               </button>
             ) : (
               <button
                 type="button"
                 className="btn btn-danger"
                 disabled={busy}
-                onClick={() => toggleSync(true)}
+                onClick={() => runAction(async () => postJson("/runs/pause"))}
               >
                 Pausar sincronización
               </button>
             )}
+            {(dash.n8n_running_count > 0 || dash.active_n8n_execution_id) && (
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={busy}
+                onClick={() => runAction(async () => postJson("/runs/cancel"))}
+              >
+                Cancelar ejecución n8n
+              </button>
+            )}
           </div>
+
+          {n8nTest && (
+            <div className={`test-result ${n8nTest.overall_ok ? "test-ok" : "test-fail"}`}>
+              <strong>
+                Prueba n8n: {n8nTest.overall_ok ? "OK" : "REVISAR"}
+              </strong>
+              <ul>
+                <li>
+                  Health ({n8nTest.base_url}):{" "}
+                  {n8nTest.health_ok ? "OK" : n8nTest.health_detail}
+                </li>
+                <li>
+                  Webhook /{n8nTest.webhook_path}:{" "}
+                  {n8nTest.webhook_ok ? "OK" : n8nTest.webhook_detail}
+                </li>
+                <li>API: {n8nTest.api_detail || (n8nTest.api_ok ? "OK" : "—")}</li>
+                {n8nTest.workflow_active === false && (
+                  <li className="status-error">Workflow inactivo en n8n</li>
+                )}
+              </ul>
+            </div>
+          )}
         </div>
+
+        {dash.paused && (
+          <div className="card card-secondary">
+            <h2>Sincronización manual</h2>
+            <p className="muted">
+              Con la sync pausada, elige la ventana de fechas (par de días consecutivos)
+              y lanza n8n directamente.
+            </p>
+            <div className="toolbar">
+              <label>
+                Desde{" "}
+                <input
+                  type="date"
+                  value={manualStart}
+                  min={dash.program_range_start}
+                  max={dash.program_range_end}
+                  onChange={(e) => onManualStartChange(e.target.value)}
+                />
+              </label>
+              <label>
+                Hasta{" "}
+                <input
+                  type="date"
+                  value={manualEnd}
+                  min={manualStart || dash.program_range_start}
+                  max={dash.program_range_end}
+                  onChange={(e) => setManualEnd(e.target.value)}
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy || !manualStart || !manualEnd}
+              onClick={() =>
+                runAction(async () =>
+                  postJson("/runs/trigger", {
+                    start_date: manualStart,
+                    end_date: manualEnd,
+                  })
+                )
+              }
+            >
+              Sincronizar esta ventana
+            </button>
+          </div>
+        )}
       </section>
     );
   }
@@ -146,7 +261,7 @@ export default function App({ page }: { page: Page }) {
       <section>
         <h1>Planificación — días históricos</h1>
         <p className="muted">
-          Datos de <code>email_history_day</code> + días pendientes del calendario (
+          Datos de <code>email_history_day</code> + días pendientes (
           {dash?.program_range_start ?? "2025-01-01"} →{" "}
           {dash?.program_range_end ?? "2026-06-30"})
         </p>
@@ -288,15 +403,20 @@ export default function App({ page }: { page: Page }) {
   return (
     <section>
       <h1>Log de ejecuciones</h1>
+      <p className="muted">
+        Inicios, pausas, reanudaciones, cancelaciones y pruebas de enlace n8n.
+      </p>
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
               <th>Inicio</th>
+              <th>Fin</th>
               <th>Ventana</th>
-              <th>Acción</th>
+              <th>Evento</th>
               <th>Estado</th>
-              <th>Nota</th>
+              <th>n8n id</th>
+              <th>Detalle</th>
             </tr>
           </thead>
           <tbody>
@@ -304,10 +424,20 @@ export default function App({ page }: { page: Page }) {
               <tr key={r.id}>
                 <td>{new Date(r.started_at).toLocaleString()}</td>
                 <td>
+                  {r.finished_at
+                    ? new Date(r.finished_at).toLocaleString()
+                    : r.status === "running"
+                      ? "—"
+                      : "—"}
+                </td>
+                <td>
                   {r.window_start} → {r.window_end}
                 </td>
-                <td>{r.action}</td>
-                <td>{r.status}</td>
+                <td>{actionLabel(r.action)}</td>
+                <td>
+                  <span className={statusClass(r.status)}>{statusLabel(r.status)}</span>
+                </td>
+                <td>{r.n8n_execution_id ?? "—"}</td>
                 <td>{r.note ?? "—"}</td>
               </tr>
             ))}

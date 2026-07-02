@@ -43,6 +43,96 @@ class N8nClient:
             if r.status_code not in (200, 204, 404):
                 r.raise_for_status()
 
+    def test_connection(self) -> dict[str, Any]:
+        """Comprueba salud, webhook registrado y API sin lanzar el workflow."""
+        path = (settings.n8n_webhook_path or "historico-run").lstrip("/")
+        result: dict[str, Any] = {
+            "base_url": self.base,
+            "webhook_path": path,
+            "health_ok": False,
+            "health_detail": "",
+            "webhook_ok": False,
+            "webhook_detail": "",
+            "api_ok": False,
+            "api_detail": "",
+            "workflow_active": None,
+            "trigger_configured": self.trigger_configured(),
+            "monitor_configured": self.monitor_configured(),
+            "overall_ok": False,
+        }
+
+        try:
+            with self._client() as client:
+                hr = client.get("/healthz", timeout=15.0)
+                result["health_ok"] = hr.status_code == 200
+                result["health_detail"] = hr.text[:200] if hr.text else str(hr.status_code)
+        except Exception as exc:
+            result["health_detail"] = str(exc)
+
+        try:
+            with self._client() as client:
+                wr = client.get(f"/webhook/{path}", timeout=15.0)
+                body = wr.text
+                if wr.status_code == 404 and "Did you mean to make a POST" in body:
+                    result["webhook_ok"] = True
+                    result["webhook_detail"] = "Webhook de producción registrado (acepta POST)"
+                elif wr.status_code == 404 and "not registered" in body.lower():
+                    result["webhook_detail"] = (
+                        "Webhook no registrado — activa el workflow en n8n"
+                    )
+                elif wr.status_code in (200, 405):
+                    result["webhook_ok"] = True
+                    result["webhook_detail"] = f"Respuesta HTTP {wr.status_code}"
+                else:
+                    result["webhook_detail"] = f"HTTP {wr.status_code}: {body[:240]}"
+        except Exception as exc:
+            result["webhook_detail"] = str(exc)
+
+        if self.monitor_configured() and settings.n8n_workflow_id:
+            try:
+                with self._client() as client:
+                    wr = client.get(
+                        f"/api/v1/workflows/{settings.n8n_workflow_id}",
+                        timeout=15.0,
+                    )
+                    if wr.status_code == 200:
+                        data = wr.json()
+                        active = bool(data.get("active"))
+                        result["workflow_active"] = active
+                        result["api_ok"] = True
+                        name = data.get("name", settings.n8n_workflow_id)
+                        result["api_detail"] = (
+                            f"Workflow «{name}» — "
+                            f"{'activo' if active else 'INACTIVO (activar en n8n)'}"
+                        )
+                        if not active:
+                            result["webhook_ok"] = result["webhook_ok"] and False
+                    else:
+                        result["api_detail"] = f"HTTP {wr.status_code}: {wr.text[:200]}"
+            except Exception as exc:
+                result["api_detail"] = str(exc)
+        elif self.monitor_configured():
+            try:
+                with self._client() as client:
+                    wr = client.get("/api/v1/workflows", params={"limit": 1}, timeout=15.0)
+                    result["api_ok"] = wr.status_code == 200
+                    result["api_detail"] = (
+                        "API key válida"
+                        if wr.status_code == 200
+                        else f"HTTP {wr.status_code}"
+                    )
+            except Exception as exc:
+                result["api_detail"] = str(exc)
+        else:
+            result["api_detail"] = "Sin N8N_API_KEY — solo prueba health + webhook"
+
+        result["overall_ok"] = (
+            result["health_ok"]
+            and result["webhook_ok"]
+            and (result["workflow_active"] is not False)
+        )
+        return result
+
     def trigger_historical(self, start_date: str, end_date: str) -> Optional[str]:
         """Dispara workflow vía webhook (preferido) o API run."""
         payload = {

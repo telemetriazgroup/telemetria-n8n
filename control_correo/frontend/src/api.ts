@@ -6,8 +6,12 @@ export async function fetchJson<T>(path: string): Promise<T> {
   return r.json();
 }
 
-export async function postJson<T>(path: string): Promise<T> {
-  const r = await fetch(`${API}${path}`, { method: "POST" });
+export async function postJson<T>(path: string, body?: unknown): Promise<T> {
+  const r = await fetch(`${API}${path}`, {
+    method: "POST",
+    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -24,10 +28,27 @@ export type Dashboard = {
   paused: boolean;
   last_poll_at: string | null;
   n8n_configured: boolean;
+  active_n8n_execution_id: string | null;
+  n8n_running_count: number;
   program_range_start: string;
   program_range_end: string;
   poll_interval_sec: number;
   scheduler_enabled: boolean;
+};
+
+export type N8nTestResult = {
+  base_url: string;
+  webhook_path: string;
+  health_ok: boolean;
+  health_detail: string;
+  webhook_ok: boolean;
+  webhook_detail: string;
+  api_ok: boolean;
+  api_detail: string;
+  workflow_active: boolean | null;
+  trigger_configured: boolean;
+  monitor_configured: boolean;
+  overall_ok: boolean;
 };
 
 export type HistoryDay = {
@@ -75,17 +96,49 @@ export type TraceDetail = TraceRow & {
 export type RunRow = {
   id: number;
   started_at: string;
+  finished_at: string | null;
   window_start: string;
   window_end: string;
   action: string;
   status: string;
+  n8n_execution_id: string | null;
   note: string | null;
 };
 
 export function statusClass(status: string): string {
   if (status === "completed") return "status-ok";
   if (status === "pending") return "status-pending";
+  if (status === "running") return "status-warn";
   if (status === "partial") return "status-warn";
   if (status === "failed") return "status-error";
+  if (status === "cancelled") return "status-error";
   return "";
+}
+
+export function actionLabel(action: string): string {
+  const map: Record<string, string> = {
+    launch: "Inicio sync",
+    retry_same: "Reintento",
+    slide_window: "Deslizar ventana",
+    stop: "Parada / cancelación",
+    wait: "Prueba / espera",
+  };
+  return map[action] ?? action;
+}
+
+export function statusLabel(status: string): string {
+  const map: Record<string, string> = {
+    running: "En curso",
+    completed: "Completado",
+    failed: "Fallido",
+    cancelled: "Cancelado",
+    timeout: "Timeout",
+  };
+  return map[status] ?? status;
+}
+
+export function addDays(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
 }

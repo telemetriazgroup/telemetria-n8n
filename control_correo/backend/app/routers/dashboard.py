@@ -28,6 +28,7 @@ def dashboard(db: Session = Depends(get_db)) -> DashboardOut:
     start, end = program_range()
     done = count_completed(db)
     total = settings.total_program_days
+    running = _n8n.list_running_executions() if _n8n.monitor_configured() else []
     return DashboardOut(
         days_completed=done,
         days_total=total,
@@ -40,6 +41,8 @@ def dashboard(db: Session = Depends(get_db)) -> DashboardOut:
         paused=state.paused,
         last_poll_at=state.last_poll_at,
         n8n_configured=_n8n.configured(),
+        active_n8n_execution_id=state.active_n8n_execution_id,
+        n8n_running_count=len(running),
         program_range_start=start,
         program_range_end=end,
         poll_interval_sec=settings.control_poll_interval_sec,
