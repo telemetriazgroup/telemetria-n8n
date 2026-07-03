@@ -320,7 +320,7 @@ connections = {
     'Guardar referencia adjuntos': {'main': [[{'node': 'Registrar día histórico', 'type': 'main', 'index': 0}]]},
     'Guardar trazabilidad': {'main': [[{'node': 'Registrar día histórico', 'type': 'main', 'index': 0}]]},
     'Registrar día histórico': {'main': [[{'node': 'Guardar resumen día', 'type': 'main', 'index': 0}]]},
-    'Guardar resumen día': {'main': [[]]},
+    'Guardar resumen día': {'main': [[{'node': 'Obtener días analizados', 'type': 'main', 'index': 0}]]},
 }
 
 wf = {

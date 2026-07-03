@@ -1,7 +1,6 @@
 """Gestión de ventanas n8n, cierre de runs y un solo proceso en curso."""
 
 import logging
-import re
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
@@ -22,8 +21,6 @@ from app.services.planner import decide_window
 
 logger = logging.getLogger(__name__)
 _n8n = N8nClient()
-
-_PROC_START_RE = re.compile(r"proc_start=(\d+)")
 
 
 def utcnow() -> datetime:
@@ -51,39 +48,11 @@ def window_is_complete(completed: set[date], w_start: date, w_end: date) -> bool
     return all(d in completed for d in days_in_window(w_start, w_end))
 
 
-def parse_proc_start(note: str | None) -> int:
-    m = _PROC_START_RE.search(note or "")
-    return int(m.group(1)) if m else 0
-
-
 def batch_note_suffix(target: date, prog: DayProgress) -> str:
     return (
         f"| día={target.isoformat()} proc_start={prog['emails_processed_count']} "
         f"listed={prog['emails_listed_count']}"
     )
-
-
-def batch_progress_detected(
-    run: ControlRun, prog: DayProgress, proc_start: int, now: datetime
-) -> bool:
-    if prog["emails_processed_count"] > proc_start:
-        return True
-    analyzed_at = prog["analyzed_at"]
-    if not analyzed_at:
-        return False
-    if analyzed_at.tzinfo is None:
-        analyzed_at = analyzed_at.replace(tzinfo=timezone.utc)
-    started = run.started_at
-    if started.tzinfo is None:
-        started = started.replace(tzinfo=timezone.utc)
-    return analyzed_at >= started and prog["emails_processed_count"] >= proc_start
-
-
-def n8n_execution_finished(state: ControlState, age_sec: float, progressed: bool) -> bool:
-    if _n8n.monitor_configured():
-        sync_n8n_execution_state_standalone(state)
-        return not _n8n.workflow_is_running()
-    return age_sec >= 45 and progressed
 
 
 def sync_n8n_execution_state_standalone(state: ControlState) -> None:
@@ -319,56 +288,13 @@ def try_launch_next(db: Session, state: ControlState) -> ControlRun | None:
     )
 
 
-def _continue_after_batch(
-    db: Session,
-    state: ControlState,
-    ws: date,
-    we: date,
-    target: date,
-    prog: DayProgress,
-) -> str:
-    """Tras cerrar un lote: ventana completa, día completo o siguiente lote."""
-    state.active_n8n_execution_id = None
-    completed = fetch_completed_dates(db)
-    listed = prog["emails_listed_count"]
-    processed = prog["emails_processed_count"]
-    match = prog["emails_match_count"]
-
-    if window_is_complete(completed, ws, we):
-        advance_window_after_success(db, state)
-        return "completed"
-
-    if prog["status"] == "completed":
-        launch_window(
-            db,
-            state,
-            ws,
-            we,
-            "retry_same",
-            f"Día {target} completado ({processed}/{listed}, {match} match); continúa ventana",
-        )
-        return "batch_day_completed"
-
-    launch_window(
-        db,
-        state,
-        ws,
-        we,
-        "batch_partial",
-        f"Lote parcial día {target}: {processed}/{listed} correos, {match} match",
-    )
-    return "batch_partial"
-
-
 def evaluate_active_run(db: Session, state: ControlState) -> str | None:
     """
     Evalúa el run en curso (watchdog cada ~2 min). Devuelve:
-      'completed'           — ventana OK en BD
-      'batch_partial'       — lote parcial registrado; siguiente lote lanzado
-      'batch_day_completed' — día cerrado; continúa ventana
-      'timeout'             — superó timeout; cancelado
-      'waiting'             — n8n aún procesando el lote
-      None                  — no hay run activo
+      'completed' — ventana OK en BD (n8n terminó el barrido del rango)
+      'timeout'   — superó timeout; cancelado
+      'waiting'   — n8n aún ejecutando (incluye lotes en bucle interno)
+      None        — no hay run activo
     """
     now = utcnow()
     timeout_sec = settings.control_exec_timeout_min * 60
@@ -397,60 +323,34 @@ def evaluate_active_run(db: Session, state: ControlState) -> str | None:
 
     sync_n8n_execution_state(db, state)
     age = run_age_seconds(active, now)
-    target = first_incomplete_day_in_window(ws, we, completed)
 
-    if target and age >= 30:
-        prog = fetch_day_progress(db, target)
-        proc_start = parse_proc_start(active.note)
-        progressed = batch_progress_detected(active, prog, proc_start, now)
-        n8n_done = n8n_execution_finished(state, age, progressed)
-
-        if progressed and n8n_done:
-            listed = prog["emails_listed_count"]
-            processed = prog["emails_processed_count"]
-            match = prog["emails_match_count"]
-            if prog["status"] == "completed":
-                finalize_run(
-                    db,
-                    active,
-                    status="completed",
-                    action="batch_day_completed",
-                    note=(
-                        f"Lote final día {target}: {processed}/{listed} correos, "
-                        f"{match} match — día completado"
-                    ),
-                )
-            else:
-                finalize_run(
-                    db,
-                    active,
-                    status="completed",
-                    action="batch_partial",
-                    note=(
-                        f"Lote parcial día {target}: {processed}/{listed} correos, "
-                        f"{match} match (sector {settings.n8n_batch_size})"
-                    ),
-                )
-            return _continue_after_batch(db, state, ws, we, target, prog)
-
-        if n8n_done and not progressed and age >= 120:
-            finalize_run(
-                db,
-                active,
-                status="failed",
-                action="retry_same",
-                note=f"Lote sin avance día {target} tras {int(age)}s — reintento",
+    # n8n terminó pero la ventana no está completa → reintento
+    if _n8n.monitor_configured() and age >= 60 and not _n8n.workflow_is_running():
+        target = first_incomplete_day_in_window(ws, we, completed)
+        prog = fetch_day_progress(db, target) if target else None
+        detail = ""
+        if prog and target:
+            detail = (
+                f" día {target} {prog['emails_processed_count']}/"
+                f"{prog['emails_listed_count']} ({prog['status']})"
             )
-            state.active_n8n_execution_id = None
-            launch_window(
-                db,
-                state,
-                ws,
-                we,
-                "retry_same",
-                f"Reintento tras lote sin avance ({target})",
-            )
-            return "batch_partial"
+        finalize_run(
+            db,
+            active,
+            status="failed",
+            action="retry_same",
+            note=f"Watchdog: n8n paró sin cerrar ventana{detail} — reintento",
+        )
+        state.active_n8n_execution_id = None
+        launch_window(
+            db,
+            state,
+            ws,
+            we,
+            "retry_same",
+            f"Reintento tras ejecución n8n incompleta ({ws}–{we})",
+        )
+        return "timeout"
 
     if age >= timeout_sec:
         stopped = stop_n8n_executions(state)

@@ -65,8 +65,8 @@ Histórico manual → Config histórico (startDate, endDate, mode=historical)
        → Listar IDs Gmail → Filtrar solo nuevos → **Sector lote** (máx. 10 por ejecución)
        → Leer → Normalizar → Filtrar recibidos relevantes
        → Guardar email_trace (solo matches) + adjuntos PDF
-       → Registrar día histórico → Guardar resumen día → **fin de ejecución**
-       → (siguiente corrida webhook/control) retoma el primer día pendiente o el siguiente lote
+       → Registrar día histórico → Guardar resumen día
+       → Obtener días analizados (siguiente lote o siguiente día hasta agotar pendientes)
 ```
 
 ### Diferencia clave vs `range`
@@ -94,9 +94,11 @@ El workflow procesa **como máximo `batchSize` correos nuevos por ejecución** (
 4. Tras guardar trazas, **Registrar día histórico** hace *upsert* en `email_history_day`:
    - **`partial`**: quedan IDs por procesar; acumula `message_ids_processed` en JSONB.
    - **`completed`**: todos los listados del día están procesados (o día vacío).
-5. Tras **Guardar resumen día** la ejecución **termina siempre** (como máximo un lote por corrida).
-   La siguiente ejecución (webhook / control_correo) retoma el mismo día si quedó `partial`, o el
-   siguiente día pendiente si quedó `completed`.
+5. Tras **Guardar resumen día** el flujo **vuelve a Obtener días analizados**:
+   - Si el día quedó **`partial`**, planifica el mismo día y **Sector lote** toma los
+     siguientes 5 correos (los ya procesados se excluyen vía `email_trace`).
+   - Si el día quedó **`completed`**, planifica el **siguiente día** pendiente del rango.
+   - Cuando no quedan días pendientes, **¿Hay días pendientes?** cierra la ejecución.
 
 El planificador solo considera días con `status = 'completed'` como hechos; un día `partial`
 sigue apareciendo como pendiente en el historial.
@@ -220,18 +222,21 @@ Si un día no tiene mensajes en Gmail:
 **Causa anterior:** Split In Batches exigía cerrar el loop manualmente y fallaba si
 no llegaba a **Registrar día histórico**.
 
-**Solución actual:** sin Split. Tras **Guardar resumen día** la ejecución **termina** (un lote
-como máximo por corrida). La siguiente corrida vuelve a **Obtener días analizados** →
-**Planificar días pendientes** y retoma el mismo día (`partial`) o el siguiente (`completed`).
+**Solución actual:** bucle interno en n8n. Tras **Guardar resumen día** → **Obtener días
+analizados** → **Planificar** → si queda trabajo, otro lote (5 correos) o el siguiente día.
 
 Ciclo esperado (día con muchos correos):
 
 ```
-[corrida 1] Planificar → … → Sector lote (10) → … → Guardar resumen (partial) → FIN
-[corrida 2] Planificar (mismo día) → Sector lote (10) → … → Guardar resumen (partial) → FIN
-[corrida N] … → Guardar resumen (completed) → FIN
-[corrida N+1] Planificar (siguiente día) → Sector lote → …
+Planificar → Sector lote (5) → … → Guardar resumen (partial)
+  → Obtener días → Planificar (mismo día) → Sector lote (5) → … → completed
+  → Obtener días → Planificar (siguiente día) → …
+  → ¿Hay días pendientes? NO → fin
 ```
+
+Con **control_correo**, cada ventana de 2 días puede tardar varios lotes; el timeout por
+defecto es **90 min** (`CONTROL_EXEC_TIMEOUT_MIN`). El watchdog cada **2 min** solo
+**comprueba** si la ventana ya está completa en BD, sin interrumpir el bucle de n8n.
 
 Casos que deben cerrar el día igual (para que el loop continúe):
 

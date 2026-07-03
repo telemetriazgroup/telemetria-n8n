@@ -34,13 +34,12 @@ def watchdog_tick() -> None:
                 logger.info("Watchdog: ventana evaluada (%s); scheduler pausado", result)
             return
 
-        if result in ("completed", "batch_partial", "batch_day_completed"):
+        if result == "completed":
             db.commit()
-            if result == "completed":
-                run = try_launch_next(db, state)
-                db.commit()
-                if run:
-                    logger.info("Watchdog: siguiente ventana tras completar")
+            run = try_launch_next(db, state)
+            db.commit()
+            if run:
+                logger.info("Watchdog: siguiente ventana tras completar")
             return
 
         if result == "timeout":

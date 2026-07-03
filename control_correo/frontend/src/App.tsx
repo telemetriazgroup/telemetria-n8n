@@ -155,8 +155,9 @@ export default function App({ page }: { page: Page }) {
               : " — scheduler deshabilitado en servidor"}
           </p>
           <p className="muted">
-            Sectores de <strong>{dash.batch_size}</strong> correos por ejecución n8n. El
-            watchdog revisa cada {pollMin} min si el lote del día ya terminó en BD.
+            Sectores de <strong>{dash.batch_size}</strong> correos por vuelta del bucle n8n.
+            Tras cada lote, el flujo vuelve a planificar hasta completar el rango. Seguimiento
+            cada {pollMin} min (timeout ventana {dash.exec_timeout_min} min).
           </p>
           {dash.last_poll_at && (
             <p className="muted">

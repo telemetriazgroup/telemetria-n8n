@@ -1240,7 +1240,13 @@
     },
     "Guardar resumen día": {
       "main": [
-        []
+        [
+          {
+            "node": "Obtener días analizados",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
