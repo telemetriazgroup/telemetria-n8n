@@ -241,6 +241,8 @@ def reconcile_runs(db: Session = Depends(get_db)) -> dict:
     if not state.paused:
         if result == "completed":
             launched = try_launch_next(db, state) is not None
+        elif result in ("batch_partial", "batch_day_completed"):
+            launched = False
         elif result == "timeout":
             ws, we = state.current_window_start, state.current_window_end
             if ws and we and not get_active_running_run(db):

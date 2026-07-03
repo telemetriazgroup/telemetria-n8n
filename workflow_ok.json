@@ -51,7 +51,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Config histórico desde Webhook (control_correo) ─────────────────────────\n// POST /webhook/historico-run\n// Body JSON: { \"mode\": \"historical\", \"startDate\": \"2026-01-16\", \"endDate\": \"2026-01-17\" }\n\nconst raw = $input.first()?.json || {};\nconst body =\n  raw.body && typeof raw.body === 'object' && !Array.isArray(raw.body)\n    ? raw.body\n    : raw;\n\nconst startDate = String(body.startDate || body.start_date || '').trim();\nconst endDate = String(body.endDate || body.end_date || '').trim();\nconst mode = String(body.mode || 'historical').toLowerCase();\n\nif (!startDate || !endDate) {\n  throw new Error(\n    'Webhook histórico: indica startDate y endDate (YYYY-MM-DD). ' +\n    'Ejemplo: {\"mode\":\"historical\",\"startDate\":\"2026-01-16\",\"endDate\":\"2026-01-17\"}'\n  );\n}\n\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(startDate) || !/^\\d{4}-\\d{2}-\\d{2}$/.test(endDate)) {\n  throw new Error('Webhook histórico: fechas deben ser YYYY-MM-DD.');\n}\n\nreturn [{\n  json: {\n    mode,\n    startDate,\n    endDate,\n    tzOffsetHours: Number(body.tzOffsetHours ?? -5),\n    receivedOnly: body.receivedOnly !== false,\n    monitorMailbox: String(body.monitorMailbox || 'telemetria@zgroup.com.pe').trim(),\n    keywordFilterEnabled: body.keywordFilterEnabled !== false,\n    skipKnownInDb: body.skipKnownInDb !== false,\n    keywords: Array.isArray(body.keywords) && body.keywords.length\n      ? body.keywords\n      : ['Luis', 'Eusebio'],\n    telemetriaVariants: Array.isArray(body.telemetriaVariants) && body.telemetriaVariants.length\n      ? body.telemetriaVariants\n      : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'],\n    matchExcerptRadius: Number(body.matchExcerptRadius ?? 120),\n    _source: 'webhook'\n  }\n}];\n"
+        "jsCode": "// ── Config histórico desde Webhook (control_correo) ─────────────────────────\n// POST /webhook/historico-run\n// Body JSON: { \"mode\": \"historical\", \"startDate\": \"2026-01-16\", \"endDate\": \"2026-01-17\" }\n\nconst raw = $input.first()?.json || {};\nconst body =\n  raw.body && typeof raw.body === 'object' && !Array.isArray(raw.body)\n    ? raw.body\n    : raw;\n\nconst startDate = String(body.startDate || body.start_date || '').trim();\nconst endDate = String(body.endDate || body.end_date || '').trim();\nconst mode = String(body.mode || 'historical').toLowerCase();\n\nif (!startDate || !endDate) {\n  throw new Error(\n    'Webhook histórico: indica startDate y endDate (YYYY-MM-DD). ' +\n    'Ejemplo: {\"mode\":\"historical\",\"startDate\":\"2026-01-16\",\"endDate\":\"2026-01-17\"}'\n  );\n}\n\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(startDate) || !/^\\d{4}-\\d{2}-\\d{2}$/.test(endDate)) {\n  throw new Error('Webhook histórico: fechas deben ser YYYY-MM-DD.');\n}\n\nreturn [{\n  json: {\n    mode,\n    startDate,\n    endDate,\n    tzOffsetHours: Number(body.tzOffsetHours ?? -5),\n    receivedOnly: body.receivedOnly !== false,\n    monitorMailbox: String(body.monitorMailbox || 'telemetria@zgroup.com.pe').trim(),\n    keywordFilterEnabled: body.keywordFilterEnabled !== false,\n    skipKnownInDb: body.skipKnownInDb !== false,\n    keywords: Array.isArray(body.keywords) && body.keywords.length\n      ? body.keywords\n      : ['Luis', 'Eusebio'],\n    telemetriaVariants: Array.isArray(body.telemetriaVariants) && body.telemetriaVariants.length\n      ? body.telemetriaVariants\n      : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'],\n    matchExcerptRadius: Number(body.matchExcerptRadius ?? 120),\n    batchSize: Math.max(1, Math.min(50, Number(body.batchSize ?? 5))),\n    _source: 'webhook'\n  }\n}];\n"
       },
       "id": "node-webhook-cfg",
       "name": "Config histórico API",
@@ -219,6 +219,12 @@
               "id": "h11",
               "name": "matchExcerptRadius",
               "value": 120,
+              "type": "number"
+            },
+            {
+              "id": "h12",
+              "name": "batchSize",
+              "value": 5,
               "type": "number"
             }
           ]
@@ -457,6 +463,19 @@
     },
     {
       "parameters": {
+        "jsCode": "// ── Sector / lote: procesa como máximo N correos por ejecución ───────────────\n// Entrada: salida de \"Filtrar solo nuevos\" (items con id o marcador _empty).\n// Config: batchSize (default 5) en Config histórico / API / webhook.\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Config histórico antes del sector lote.');\n}\n\nconst cfg = getCfg();\nconst batchSize = Math.max(1, Math.min(50, Number(cfg.batchSize ?? 5)));\n\nconst items = $input.all();\n\n// Pasar vacíos sin tocar (sin correos / todos ya en BD)\nif (items.length === 1 && items[0].json && items[0].json._empty) {\n  return items.map(i => ({ json: { ...i.json, _sector: { batchSize, skipped: true } } }));\n}\n\nconst withId = items.filter(i => i.json && i.json.id);\nif (!withId.length) {\n  return items;\n}\n\nconst totalPending = withId.length;\nconst sector = withId.slice(0, batchSize);\nconst remainingAfter = Math.max(0, totalPending - sector.length);\n\nconst sectorMeta = {\n  batchSize,\n  sectorCount: sector.length,\n  totalPending,\n  remainingAfter,\n  sectorComplete: remainingAfter === 0,\n  sectorIndex: 1\n};\n\nreturn sector.map((item, idx) => ({\n  json: {\n    ...item.json,\n    _sector: idx === 0 ? sectorMeta : { ...sectorMeta, sectorIndex: idx + 1 }\n  }\n}));\n"
+      },
+      "id": "node-sector-lote",
+      "name": "Sector lote",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        600
+      ]
+    },
+    {
+      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -483,7 +502,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2020,
+        2120,
         600
       ]
     },
@@ -515,7 +534,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2020,
+        2120,
         780
       ]
     },
@@ -723,7 +742,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Registrar resumen del día histórico ─────────────────────────────────────\n// Consolida IDs y genera SQL upsert seguro para email_history_day.\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all() || []; } catch (e) { return []; }\n}\n\nfunction safeFirstJson(nodeName) {\n  try { return $(nodeName).first()?.json || null; } catch (e) { return null; }\n}\n\nfunction pgStr(v) {\n  return `'${String(v ?? '').replace(/'/g, \"''\")}'`;\n}\n\nfunction pgJson(arr) {\n  return `'${JSON.stringify(arr || [])}'::jsonb`;\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Configuración o Config histórico.');\n}\n\nconst cfg = getCfg();\nconst qinfoMain = safeFirstJson('Construir consulta Gmail') || {};\nconst filtrarRow = safeFirstJson('Filtrar solo nuevos') || {};\nconst dayCtx =\n  filtrarRow._dayCtx ||\n  $input.first()?.json?._dayCtx ||\n  {\n    processDate: qinfoMain.processDate,\n    rangeStart: qinfoMain.rangeStart || cfg.startDate,\n    rangeEnd: qinfoMain.rangeEnd || cfg.endDate\n  };\n\nconst processDate = dayCtx.processDate || qinfoMain.processDate;\nif (!processDate) {\n  throw new Error('Registrar día histórico: falta processDate del día en curso.');\n}\n\nconst listRespMain = safeFirstJson('Listar IDs Gmail') || {};\nconst qinfo =\n  (() => {\n    try {\n      const j = $('Construir consulta Gmail').item?.json;\n      if (j && j.gmailQuery) return j;\n    } catch (e) { /* optional */ }\n    return qinfoMain;\n  })();\nconst listResp =\n  (() => {\n    try {\n      return $('Listar IDs Gmail').item?.json || listRespMain;\n    } catch (e) {\n      return listRespMain;\n    }\n  })();\n\nconst listedIds = Array.isArray(listResp.messages)\n  ? listResp.messages.map(m => m && m.id).filter(Boolean)\n  : [];\n\nconst processedIds = safeAll('Normalizar correo')\n  .map(i => i.json.message_id)\n  .filter(Boolean);\n\nconst matchIds = safeAll('Filtrar recibidos relevantes')\n  .map(i => i.json.message_id)\n  .filter(Boolean);\n\nconst inputJson = $input.first()?.json || {};\nconst emptyDay = inputJson._empty === true || inputJson._historicalEmptyDay === true;\n\nconst row = {\n  analyzed_date: processDate,\n  range_start: dayCtx.rangeStart || cfg.startDate,\n  range_end: dayCtx.rangeEnd || cfg.endDate,\n  gmail_query: qinfo.gmailQuery || '',\n  emails_listed_count: listedIds.length,\n  emails_processed_count: emptyDay ? 0 : processedIds.length,\n  emails_match_count: matchIds.length,\n  message_ids_listed: listedIds,\n  message_ids_processed: emptyDay ? [] : processedIds,\n  message_ids_match: matchIds,\n  status: 'completed',\n  empty_day: emptyDay\n};\n\nconst upsertSql = `\nINSERT INTO email_history_day (\n  analyzed_date, range_start, range_end, gmail_query,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  message_ids_listed, message_ids_processed, message_ids_match,\n  status, analyzed_at\n) VALUES (\n  ${pgStr(row.analyzed_date)}::date,\n  ${pgStr(row.range_start)}::date,\n  ${pgStr(row.range_end)}::date,\n  ${pgStr(row.gmail_query)},\n  ${row.emails_listed_count},\n  ${row.emails_processed_count},\n  ${row.emails_match_count},\n  ${pgJson(row.message_ids_listed)},\n  ${pgJson(row.message_ids_processed)},\n  ${pgJson(row.message_ids_match)},\n  ${pgStr(row.status)},\n  now()\n)\nON CONFLICT (analyzed_date) DO UPDATE SET\n  range_start = EXCLUDED.range_start,\n  range_end = EXCLUDED.range_end,\n  gmail_query = EXCLUDED.gmail_query,\n  emails_listed_count = EXCLUDED.emails_listed_count,\n  emails_processed_count = EXCLUDED.emails_processed_count,\n  emails_match_count = EXCLUDED.emails_match_count,\n  message_ids_listed = EXCLUDED.message_ids_listed,\n  message_ids_processed = EXCLUDED.message_ids_processed,\n  message_ids_match = EXCLUDED.message_ids_match,\n  status = EXCLUDED.status,\n  analyzed_at = now()\nRETURNING analyzed_date::text AS analyzed_date,\n  emails_listed_count, emails_processed_count, emails_match_count;\n`.trim();\n\nreturn [{ json: { ...row, upsertSql } }];\n"
+        "jsCode": "// ── Registrar resumen del día histórico ─────────────────────────────────────\n// Consolida IDs y genera SQL upsert seguro para email_history_day.\n// Soporta sectores (lotes): status partial hasta completar todos los listados.\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all() || []; } catch (e) { return []; }\n}\n\nfunction safeFirstJson(nodeName) {\n  try { return $(nodeName).first()?.json || null; } catch (e) { return null; }\n}\n\nfunction pgStr(v) {\n  return `'${String(v ?? '').replace(/'/g, \"''\")}'`;\n}\n\nfunction pgJson(arr) {\n  return `'${JSON.stringify(arr || [])}'::jsonb`;\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Configuración o Config histórico.');\n}\n\nconst cfg = getCfg();\nconst qinfoMain = safeFirstJson('Construir consulta Gmail') || {};\nconst filtrarRow = safeFirstJson('Filtrar solo nuevos') || safeFirstJson('Sector lote') || {};\nconst sectorRow = safeFirstJson('Sector lote') || {};\nconst dayCtx =\n  filtrarRow._dayCtx ||\n  sectorRow._dayCtx ||\n  $input.first()?.json?._dayCtx ||\n  {\n    processDate: qinfoMain.processDate,\n    rangeStart: qinfoMain.rangeStart || cfg.startDate,\n    rangeEnd: qinfoMain.rangeEnd || cfg.endDate\n  };\n\nconst processDate = dayCtx.processDate || qinfoMain.processDate;\nif (!processDate) {\n  throw new Error('Registrar día histórico: falta processDate del día en curso.');\n}\n\nconst listRespMain = safeFirstJson('Listar IDs Gmail') || {};\nconst qinfo =\n  (() => {\n    try {\n      const j = $('Construir consulta Gmail').item?.json;\n      if (j && j.gmailQuery) return j;\n    } catch (e) { /* optional */ }\n    return qinfoMain;\n  })();\nconst listResp =\n  (() => {\n    try {\n      return $('Listar IDs Gmail').item?.json || listRespMain;\n    } catch (e) {\n      return listRespMain;\n    }\n  })();\n\nconst listedIds = Array.isArray(listResp.messages)\n  ? listResp.messages.map(m => m && m.id).filter(Boolean)\n  : [];\n\nconst processedIds = safeAll('Normalizar correo')\n  .map(i => i.json.message_id)\n  .filter(Boolean);\n\nconst matchIds = safeAll('Filtrar recibidos relevantes')\n  .map(i => i.json.message_id)\n  .filter(Boolean);\n\nconst inputJson = $input.first()?.json || {};\nconst emptyMarker = inputJson._empty === true || inputJson._historicalEmptyDay === true;\nconst emptyReason = String(filtrarRow.reason || inputJson.reason || '');\n\nconst sector = sectorRow._sector || filtrarRow._sector || null;\n\nlet batchProcessed = processedIds;\nlet batchMatch = matchIds;\nlet statusHint = 'completed';\n\nif (emptyMarker && emptyReason === 'sin_correos_en_gmail') {\n  batchProcessed = [];\n  batchMatch = [];\n  statusHint = 'completed';\n} else if (emptyMarker && emptyReason === 'todos_ya_en_bd') {\n  batchProcessed = listedIds;\n  batchMatch = safeAll('Filtrar recibidos relevantes').map(i => i.json.message_id).filter(Boolean);\n  statusHint = 'completed';\n} else if (sector && sector.remainingAfter > 0) {\n  statusHint = 'partial';\n} else if (listedIds.length > 0 && batchProcessed.length < listedIds.length && sector) {\n  statusHint = sector.sectorComplete ? 'completed' : 'partial';\n} else if (listedIds.length > 0 && batchProcessed.length >= listedIds.length) {\n  statusHint = 'completed';\n}\n\nconst row = {\n  analyzed_date: processDate,\n  range_start: dayCtx.rangeStart || cfg.startDate,\n  range_end: dayCtx.rangeEnd || cfg.endDate,\n  gmail_query: qinfo.gmailQuery || '',\n  emails_listed_count: listedIds.length,\n  emails_processed_count: batchProcessed.length,\n  emails_match_count: batchMatch.length,\n  message_ids_listed: listedIds,\n  message_ids_processed: batchProcessed,\n  message_ids_match: batchMatch,\n  status: statusHint,\n  empty_day: emptyMarker && emptyReason === 'sin_correos_en_gmail',\n  empty_reason: emptyReason,\n  sector: sector || null\n};\n\nconst mergeProcSql = `\n  SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)\n  FROM (\n    SELECT jsonb_array_elements_text(COALESCE(email_history_day.message_ids_processed, '[]'::jsonb)) AS elem\n    UNION ALL\n    SELECT jsonb_array_elements_text(EXCLUDED.message_ids_processed) AS elem\n  ) u\n`.trim();\n\nconst mergeMatchSql = `\n  SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)\n  FROM (\n    SELECT jsonb_array_elements_text(COALESCE(email_history_day.message_ids_match, '[]'::jsonb)) AS elem\n    UNION ALL\n    SELECT jsonb_array_elements_text(EXCLUDED.message_ids_match) AS elem\n  ) u\n`.trim();\n\nconst upsertSql = `\nINSERT INTO email_history_day (\n  analyzed_date, range_start, range_end, gmail_query,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  message_ids_listed, message_ids_processed, message_ids_match,\n  status, analyzed_at\n) VALUES (\n  ${pgStr(row.analyzed_date)}::date,\n  ${pgStr(row.range_start)}::date,\n  ${pgStr(row.range_end)}::date,\n  ${pgStr(row.gmail_query)},\n  ${row.emails_listed_count},\n  ${row.emails_processed_count},\n  ${row.emails_match_count},\n  ${pgJson(row.message_ids_listed)},\n  ${pgJson(row.message_ids_processed)},\n  ${pgJson(row.message_ids_match)},\n  ${pgStr(row.status)},\n  now()\n)\nON CONFLICT (analyzed_date) DO UPDATE SET\n  range_start = EXCLUDED.range_start,\n  range_end = EXCLUDED.range_end,\n  gmail_query = EXCLUDED.gmail_query,\n  emails_listed_count = EXCLUDED.emails_listed_count,\n  message_ids_listed = EXCLUDED.message_ids_listed,\n  message_ids_processed = (${mergeProcSql}),\n  message_ids_match = (${mergeMatchSql}),\n  emails_processed_count = jsonb_array_length((${mergeProcSql})),\n  emails_match_count = jsonb_array_length((${mergeMatchSql})),\n  status = CASE\n    WHEN EXCLUDED.emails_listed_count = 0 THEN 'completed'\n    WHEN jsonb_array_length((${mergeProcSql})) >= EXCLUDED.emails_listed_count THEN 'completed'\n    ELSE 'partial'\n  END,\n  analyzed_at = now()\nRETURNING analyzed_date::text AS analyzed_date,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  status;\n`.trim();\n\nreturn [{ json: { ...row, upsertSql } }];\n"
       },
       "id": "node-reg-day",
       "name": "Registrar día histórico",
@@ -1049,6 +1068,17 @@
       "main": [
         [
           {
+            "node": "Sector lote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sector lote": {
+      "main": [
+        [
+          {
             "node": "¿Día vacío histórico?",
             "type": "main",
             "index": 0
@@ -1210,13 +1240,7 @@
     },
     "Guardar resumen día": {
       "main": [
-        [
-          {
-            "node": "Obtener días analizados",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     }
   },

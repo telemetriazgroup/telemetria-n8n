@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta
-from typing import Generator
+from typing import Generator, Optional, TypedDict
 
 from sqlalchemy import (
     Boolean,
@@ -108,6 +108,86 @@ def count_completed(db: Session) -> int:
         ),
         {"start": start, "end": end},
     ).scalar_one()
+
+
+class DayProgress(TypedDict):
+    analyzed_date: date
+    status: str
+    emails_listed_count: int
+    emails_processed_count: int
+    emails_match_count: int
+    analyzed_at: Optional[datetime]
+
+
+def fetch_day_progress(db: Session, day: date) -> DayProgress:
+    row = db.execute(
+        text(
+            """
+            SELECT analyzed_date, status, emails_listed_count,
+                   emails_processed_count, emails_match_count, analyzed_at
+            FROM email_history_day
+            WHERE analyzed_date = :day
+            """
+        ),
+        {"day": day},
+    ).mappings().first()
+    if row:
+        return DayProgress(
+            analyzed_date=row["analyzed_date"],
+            status=row["status"],
+            emails_listed_count=row["emails_listed_count"] or 0,
+            emails_processed_count=row["emails_processed_count"] or 0,
+            emails_match_count=row["emails_match_count"] or 0,
+            analyzed_at=row["analyzed_at"],
+        )
+    return DayProgress(
+        analyzed_date=day,
+        status="pending",
+        emails_listed_count=0,
+        emails_processed_count=0,
+        emails_match_count=0,
+        analyzed_at=None,
+    )
+
+
+def count_days_with_match(db: Session) -> int:
+    start, end = program_range()
+    return db.execute(
+        text(
+            """
+            SELECT COUNT(*)::int
+            FROM email_history_day
+            WHERE analyzed_date >= :start AND analyzed_date <= :end
+              AND emails_match_count > 0
+            """
+        ),
+        {"start": start, "end": end},
+    ).scalar_one()
+
+
+def sum_match_emails(db: Session) -> int:
+    start, end = program_range()
+    return db.execute(
+        text(
+            """
+            SELECT COALESCE(SUM(emails_match_count), 0)::int
+            FROM email_history_day
+            WHERE analyzed_date >= :start AND analyzed_date <= :end
+            """
+        ),
+        {"start": start, "end": end},
+    ).scalar_one()
+
+
+def first_incomplete_day_in_window(
+    w_start: date, w_end: date, completed: set[date]
+) -> Optional[date]:
+    d = w_start
+    while d <= w_end:
+        if d not in completed:
+            return d
+        d += timedelta(days=1)
+    return None
 
 
 def month_enabled(db: Session, d: date) -> bool:

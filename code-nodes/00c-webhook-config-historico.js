@@ -40,6 +40,7 @@ return [{
       ? body.telemetriaVariants
       : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'],
     matchExcerptRadius: Number(body.matchExcerptRadius ?? 120),
+    batchSize: Math.max(1, Math.min(50, Number(body.batchSize ?? 5))),
     _source: 'webhook'
   }
 }];

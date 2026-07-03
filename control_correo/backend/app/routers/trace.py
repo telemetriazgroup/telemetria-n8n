@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,18 +14,26 @@ router = APIRouter(prefix="/api/v1/trace", tags=["trace"])
 @router.get("", response_model=list[TraceOut])
 def list_trace(
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    page_size: int = Query(20, ge=1, le=200),
     date_from: Optional[date] = Query(None, alias="from"),
     date_to: Optional[date] = Query(None, alias="to"),
+    datetime_from: Optional[datetime] = Query(None, alias="from_dt"),
+    datetime_to: Optional[datetime] = Query(None, alias="to_dt"),
     db: Session = Depends(get_db),
 ) -> list[TraceOut]:
     offset = (page - 1) * page_size
     clauses = ["trace_status = 'active'", "review_mode = 'historical'"]
     params: dict = {"limit": page_size, "offset": offset}
-    if date_from:
+    if datetime_from:
+        clauses.append("email_date >= :dt_from")
+        params["dt_from"] = datetime_from
+    elif date_from:
         clauses.append("email_date >= :df")
         params["df"] = date_from
-    if date_to:
+    if datetime_to:
+        clauses.append("email_date <= :dt_to")
+        params["dt_to"] = datetime_to
+    elif date_to:
         clauses.append("email_date < (:dt::date + INTERVAL '1 day')")
         params["dt"] = date_to
     where = " AND ".join(clauses)

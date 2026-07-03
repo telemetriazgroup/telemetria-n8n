@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     n8n_api_key: str = ""
     n8n_workflow_id: str = ""
     n8n_webhook_path: str = "historico-run"
+    n8n_batch_size: int = 5  # env: N8N_BATCH_SIZE — correos por lote n8n
 
     cors_origins: str = "http://localhost:7201,http://161.132.53.51:7201"
 

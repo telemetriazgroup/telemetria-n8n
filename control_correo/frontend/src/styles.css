@@ -43,6 +43,25 @@ main {
   margin-bottom: 1rem;
 }
 
+.progress-day {
+  margin: 0.5rem 0;
+}
+
+.progress-day > div {
+  background: linear-gradient(90deg, #6cb6ff, #3fb950);
+}
+
+.card-active-flow {
+  border: 1px solid #6cb6ff;
+  box-shadow: 0 0 0 1px rgba(108, 182, 255, 0.2);
+}
+
+.flow-pulse {
+  color: #6cb6ff;
+  font-weight: normal;
+  font-size: 0.9em;
+}
+
 .card-secondary h2 {
   margin: 0 0 0.5rem;
   font-size: 1.05rem;
@@ -141,12 +160,26 @@ td {
 }
 
 .toolbar select,
-.toolbar input[type="date"] {
+.toolbar input[type="date"],
+.toolbar input[type="datetime-local"] {
   background: #1a2332;
   color: #e8eaed;
   border: 1px solid #2d3748;
   border-radius: 4px;
   padding: 0.35rem 0.5rem;
+}
+
+.toolbar-wrap {
+  margin-bottom: 0.5rem;
+}
+
+.trace-filters {
+  max-width: 900px;
+}
+
+.trace-filters h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
 }
 
 .btn-row {

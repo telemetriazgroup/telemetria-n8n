@@ -1,4 +1,4 @@
-"""Watchdog cada 2 min + lanzamiento automático cuando no hay sync en curso."""
+"""Watchdog cada 2 min: comprueba si el lote/día terminó y registra ciclos parciales."""
 
 import logging
 
@@ -34,12 +34,13 @@ def watchdog_tick() -> None:
                 logger.info("Watchdog: ventana evaluada (%s); scheduler pausado", result)
             return
 
-        if result == "completed":
+        if result in ("completed", "batch_partial", "batch_day_completed"):
             db.commit()
-            run = try_launch_next(db, state)
-            db.commit()
-            if run:
-                logger.info("Watchdog: siguiente ventana lanzada tras completar")
+            if result == "completed":
+                run = try_launch_next(db, state)
+                db.commit()
+                if run:
+                    logger.info("Watchdog: siguiente ventana tras completar")
             return
 
         if result == "timeout":
@@ -96,9 +97,10 @@ def start_scheduler() -> None:
     )
     scheduler.start()
     logger.info(
-        "Watchdog iniciado cada %s s (timeout ejecución %s min)",
+        "Watchdog iniciado cada %s s — seguimiento de lotes/día (timeout %s min, batch %s)",
         interval,
         settings.control_exec_timeout_min,
+        settings.n8n_batch_size,
     )
 
 

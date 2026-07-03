@@ -146,6 +146,7 @@ nodes = [
                     {'id': 'h10', 'name': 'telemetriaVariants',
                      'value': '={{ ["telemetria", "telemtria", "telemetrai", "ztrack", "api", "software", "plataforma"] }}', 'type': 'array'},
                     {'id': 'h11', 'name': 'matchExcerptRadius', 'value': 120, 'type': 'number'},
+                    {'id': 'h12', 'name': 'batchSize', 'value': 5, 'type': 'number'},
                 ]
             }, 'options': {},
         },
@@ -196,7 +197,8 @@ nodes = [
         'position': [1580, 600], 'credentials': GMAIL,
     },
     code_node('node-filter-new', 'Filtrar solo nuevos', [1800, 600], '05-filtrar-solo-nuevos.js'),
-    if_bool('node-if-empty-hist', '¿Día vacío histórico?', [2020, 600],
+    code_node('node-sector-lote', 'Sector lote', [1900, 600], '06a-sector-lote.js'),
+    if_bool('node-if-empty-hist', '¿Día vacío histórico?', [2120, 600],
             "={{ (() => { "
             "for (const n of ['Config histórico API', 'Config histórico', 'Configuración']) { "
             "try { "
@@ -205,7 +207,7 @@ nodes = [
             "} catch(e) {} "
             "} return false; "
             "})() }}"),
-    if_bool('node-if-has-id', '¿Hay correos nuevos?', [2020, 780],
+    if_bool('node-if-has-id', '¿Hay correos nuevos?', [2120, 780],
             '={{ !!$json.id }}'),
     code_node('node-skip-empty', 'Omitir si vacío', [2240, 780], '06-skip-si-vacio.js'),
     {
@@ -292,7 +294,8 @@ connections = {
     ]]},
     'Obtener IDs en BD': {'main': [[]]},
     'Listar IDs Gmail': {'main': [[{'node': 'Filtrar solo nuevos', 'type': 'main', 'index': 0}]]},
-    'Filtrar solo nuevos': {'main': [[{'node': '¿Día vacío histórico?', 'type': 'main', 'index': 0}]]},
+    'Filtrar solo nuevos': {'main': [[{'node': 'Sector lote', 'type': 'main', 'index': 0}]]},
+    'Sector lote': {'main': [[{'node': '¿Día vacío histórico?', 'type': 'main', 'index': 0}]]},
     '¿Día vacío histórico?': {'main': [
         [{'node': 'Registrar día histórico', 'type': 'main', 'index': 0}],
         [{'node': '¿Hay correos nuevos?', 'type': 'main', 'index': 0}],
@@ -317,7 +320,7 @@ connections = {
     'Guardar referencia adjuntos': {'main': [[{'node': 'Registrar día histórico', 'type': 'main', 'index': 0}]]},
     'Guardar trazabilidad': {'main': [[{'node': 'Registrar día histórico', 'type': 'main', 'index': 0}]]},
     'Registrar día histórico': {'main': [[{'node': 'Guardar resumen día', 'type': 'main', 'index': 0}]]},
-    'Guardar resumen día': {'main': [[{'node': 'Obtener días analizados', 'type': 'main', 'index': 0}]]},
+    'Guardar resumen día': {'main': [[]]},
 }
 
 wf = {

@@ -62,11 +62,11 @@ Histórico manual → Config histórico (startDate, endDate, mode=historical)
   → Planificar días pendientes (1 día pendiente por vuelta; 0 previos = empieza en startDate)
   → ¿Hay días pendientes?
        → Construir consulta Gmail (solo ESE día, sin filtro keywords en API)
-       → Listar IDs Gmail → Filtrar solo nuevos
+       → Listar IDs Gmail → Filtrar solo nuevos → **Sector lote** (máx. 10 por ejecución)
        → Leer → Normalizar → Filtrar recibidos relevantes
        → Guardar email_trace (solo matches) + adjuntos PDF
-       → Registrar día histórico → Guardar resumen día
-       → Obtener días analizados (siguiente día del rango)
+       → Registrar día histórico → Guardar resumen día → **fin de ejecución**
+       → (siguiente corrida webhook/control) retoma el primer día pendiente o el siguiente lote
 ```
 
 ### Diferencia clave vs `range`
@@ -74,6 +74,50 @@ Histórico manual → Config histórico (startDate, endDate, mode=historical)
 - **`historical`**: Gmail lista **todos** los recibidos del día (`after:`/`before:` + `-in:sent`).
   El filtro telemetría + Luis/Eusebio se aplica **después**, en el nodo Code.
 - **`range`**: una sola ventana grande; Gmail pre-filtra por keywords y puede omitir correos.
+
+---
+
+## Sectores (lotes de N correos por ejecución)
+
+Días con muchos mensajes o cuerpos muy grandes pueden agotar el tiempo de ejecución de n8n.
+El workflow procesa **como máximo `batchSize` correos nuevos por ejecución** (default **5**).
+
+| Parámetro | Dónde | Default |
+|-----------|--------|---------|
+| `batchSize` | **Config histórico**, **Config histórico API** / webhook / `N8N_BATCH_SIZE` | `5` (máx. 50) |
+
+### Comportamiento
+
+1. **Listar IDs Gmail** obtiene todos los recibidos del día.
+2. **Filtrar solo nuevos** excluye IDs ya en `email_trace` (modo `historical`).
+3. **Sector lote** (`code-nodes/06a-sector-lote.js`) toma solo los primeros N pendientes.
+4. Tras guardar trazas, **Registrar día histórico** hace *upsert* en `email_history_day`:
+   - **`partial`**: quedan IDs por procesar; acumula `message_ids_processed` en JSONB.
+   - **`completed`**: todos los listados del día están procesados (o día vacío).
+5. Tras **Guardar resumen día** la ejecución **termina siempre** (como máximo un lote por corrida).
+   La siguiente ejecución (webhook / control_correo) retoma el mismo día si quedó `partial`, o el
+   siguiente día pendiente si quedó `completed`.
+
+El planificador solo considera días con `status = 'completed'` como hechos; un día `partial`
+sigue apareciendo como pendiente en el historial.
+
+Consulta de progreso por sectores:
+
+```sql
+SELECT analyzed_date, status,
+       emails_listed_count, emails_processed_count,
+       emails_match_count, analyzed_at
+FROM email_history_day
+WHERE analyzed_date = '2025-12-15';
+```
+
+Webhook con tamaño de lote personalizado:
+
+```bash
+curl -X POST 'https://ztrack.app/automatico/webhook/historico-run' \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"historical","startDate":"2026-01-16","endDate":"2026-01-17","batchSize":5}'
+```
 
 ---
 
@@ -176,15 +220,17 @@ Si un día no tiene mensajes en Gmail:
 **Causa anterior:** Split In Batches exigía cerrar el loop manualmente y fallaba si
 no llegaba a **Registrar día histórico**.
 
-**Solución actual:** sin Split. Tras **Guardar resumen día** el flujo vuelve a
-**Obtener días analizados** → **Planificar días pendientes** (solo el primer día
-que falta) → **Construir consulta Gmail** con el nuevo `processDate`.
+**Solución actual:** sin Split. Tras **Guardar resumen día** la ejecución **termina** (un lote
+como máximo por corrida). La siguiente corrida vuelve a **Obtener días analizados** →
+**Planificar días pendientes** y retoma el mismo día (`partial`) o el siguiente (`completed`).
 
-Ciclo esperado:
+Ciclo esperado (día con muchos correos):
 
 ```
-Planificar → Construir consulta → … → Registrar día histórico → Guardar resumen día
-  → Obtener días analizados → Planificar (siguiente día) → Construir consulta → …
+[corrida 1] Planificar → … → Sector lote (10) → … → Guardar resumen (partial) → FIN
+[corrida 2] Planificar (mismo día) → Sector lote (10) → … → Guardar resumen (partial) → FIN
+[corrida N] … → Guardar resumen (completed) → FIN
+[corrida N+1] Planificar (siguiente día) → Sector lote → …
 ```
 
 Casos que deben cerrar el día igual (para que el loop continúe):

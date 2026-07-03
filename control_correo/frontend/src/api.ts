@@ -20,6 +20,8 @@ export type Dashboard = {
   days_completed: number;
   days_total: number;
   percent: number;
+  days_with_match: number;
+  total_match_emails: number;
   active_year: number | null;
   active_month: number | null;
   current_window_start: string | null;
@@ -30,6 +32,17 @@ export type Dashboard = {
   n8n_configured: boolean;
   active_n8n_execution_id: string | null;
   n8n_running_count: number;
+  n8n_flow_active: boolean;
+  sync_in_progress: boolean;
+  active_run_id: number | null;
+  active_run_started_at: string | null;
+  processing_date: string | null;
+  day_status: string | null;
+  day_listed: number;
+  day_processed: number;
+  day_match: number;
+  day_percent: number;
+  batch_size: number;
   program_range_start: string;
   program_range_end: string;
   poll_interval_sec: number;
@@ -124,6 +137,9 @@ export function actionLabel(action: string): string {
     slide_window: "Deslizar ventana",
     stop: "Parada / cancelación",
     wait: "Prueba / espera",
+    batch_partial: "Lote parcial (sector)",
+    batch_day_completed: "Día completado",
+    completed: "Ventana completada",
   };
   return map[action] ?? action;
 }
@@ -143,4 +159,56 @@ export function addDays(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T12:00:00`);
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+export function clipDateRange(
+  from: string,
+  to: string,
+  min: string,
+  max: string
+): { from: string; to: string } {
+  const f = from < min ? min : from;
+  const t = to > max ? max : to;
+  return f <= t ? { from: f, to: t } : { from: f, to: f };
+}
+
+export function yearDateRange(year: number, programEnd = "2026-06-30"): { from: string; to: string } {
+  if (year === 2025) return { from: "2025-01-01", to: "2025-12-31" };
+  return { from: "2026-01-01", to: programEnd };
+}
+
+export function monthDateRange(year: number, month: number): { from: string; to: string } {
+  const mm = String(month).padStart(2, "0");
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    from: `${year}-${mm}-01`,
+    to: `${year}-${mm}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+export const MONTH_LABELS: { value: number; label: string }[] = [
+  { value: 0, label: "Todos los meses" },
+  { value: 1, label: "Enero" },
+  { value: 2, label: "Febrero" },
+  { value: 3, label: "Marzo" },
+  { value: 4, label: "Abril" },
+  { value: 5, label: "Mayo" },
+  { value: 6, label: "Junio" },
+  { value: 7, label: "Julio" },
+  { value: 8, label: "Agosto" },
+  { value: 9, label: "Septiembre" },
+  { value: 10, label: "Octubre" },
+  { value: 11, label: "Noviembre" },
+  { value: 12, label: "Diciembre" },
+];
+
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString();
+}
+
+/** Convierte valor de input datetime-local a ISO para la API. */
+export function datetimeLocalToIso(value: string): string {
+  if (!value) return "";
+  return new Date(value).toISOString();
 }

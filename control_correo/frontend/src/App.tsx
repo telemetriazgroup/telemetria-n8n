@@ -8,10 +8,16 @@ import {
   TraceRow,
   actionLabel,
   addDays,
+  clipDateRange,
+  datetimeLocalToIso,
   fetchJson,
+  formatDateTime,
+  monthDateRange,
+  MONTH_LABELS,
   postJson,
   statusClass,
   statusLabel,
+  yearDateRange,
 } from "./api";
 
 type Page = "dashboard" | "history" | "trace" | "runs";
@@ -24,9 +30,14 @@ export default function App({ page }: { page: Page }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [historyYear, setHistoryYear] = useState<number>(2025);
+  const [historyMonth, setHistoryMonth] = useState<number>(0);
   const [historyFilter, setHistoryFilter] = useState<string>("all");
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
-  const [traceDate, setTraceDate] = useState<string>("");
+  const [traceRangeActive, setTraceRangeActive] = useState(false);
+  const [traceFromDt, setTraceFromDt] = useState<string>("");
+  const [traceToDt, setTraceToDt] = useState<string>("");
+  const [traceDraftFrom, setTraceDraftFrom] = useState<string>("");
+  const [traceDraftTo, setTraceDraftTo] = useState<string>("");
   const [n8nTest, setN8nTest] = useState<N8nTestResult | null>(null);
   const [manualStart, setManualStart] = useState<string>("");
   const [manualEnd, setManualEnd] = useState<string>("");
@@ -43,24 +54,44 @@ export default function App({ page }: { page: Page }) {
     } else if (page === "history") {
       const d = await fetchJson<Dashboard>("/dashboard");
       setDash(d);
-      const from = historyYear === 2025 ? "2025-01-01" : "2026-01-01";
-      const to = historyYear === 2025 ? "2025-12-31" : "2026-06-30";
+      const progStart = d.program_range_start;
+      const progEnd = d.program_range_end;
+      const raw =
+        historyMonth === 0
+          ? yearDateRange(historyYear, progEnd)
+          : monthDateRange(historyYear, historyMonth);
+      const { from, to } = clipDateRange(raw.from, raw.to, progStart, progEnd);
       setDays(await fetchJson<HistoryDay[]>(`/history/plan?from=${from}&to=${to}`));
     } else if (page === "trace") {
-      const q = traceDate ? `&from=${traceDate}&to=${traceDate}` : "";
-      setTraces(await fetchJson<TraceRow[]>(`/trace?page_size=200${q}`));
+      if (traceRangeActive && traceFromDt && traceToDt) {
+        const fromDt = encodeURIComponent(datetimeLocalToIso(traceFromDt));
+        const toDt = encodeURIComponent(datetimeLocalToIso(traceToDt));
+        setTraces(
+          await fetchJson<TraceRow[]>(
+            `/trace?page_size=200&from_dt=${fromDt}&to_dt=${toDt}`
+          )
+        );
+      } else {
+        setTraces(await fetchJson<TraceRow[]>(`/trace?page_size=20`));
+      }
     } else {
       setRuns(await fetchJson<RunRow[]>("/runs?limit=100"));
     }
-  }, [page, historyYear, traceDate, manualStart]);
+  }, [page, historyYear, historyMonth, traceRangeActive, traceFromDt, traceToDt, manualStart]);
 
   useEffect(() => {
     load().catch((e) => setError(String(e)));
+    const pollMs =
+      page === "dashboard" && dash?.sync_in_progress
+        ? 15000
+        : page === "dashboard"
+          ? 30000
+          : 30000;
     const t = setInterval(() => {
       load().catch((e) => setError(String(e)));
-    }, 30000);
+    }, pollMs);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, page, dash?.sync_in_progress]);
 
   const runAction = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -84,6 +115,7 @@ export default function App({ page }: { page: Page }) {
 
   if (page === "dashboard" && dash) {
     const pollMin = Math.round(dash.watchdog_interval_sec / 60);
+    const dayLabel = dash.processing_date ?? dash.first_pending ?? "—";
     return (
       <section>
         <h1>Dashboard histórico</h1>
@@ -97,7 +129,12 @@ export default function App({ page }: { page: Page }) {
             <div style={{ width: `${dash.percent}%` }} />
           </div>
           <p>
-            {dash.days_completed} / {dash.days_total} días ({dash.percent}%)
+            <strong>Días procesados:</strong> {dash.days_completed} / {dash.days_total} (
+            {dash.percent}%)
+          </p>
+          <p>
+            <strong>Días con match:</strong> {dash.days_with_match} ·{" "}
+            <strong>Correos match (total):</strong> {dash.total_match_emails}
           </p>
           <p>
             Mes activo: {dash.active_year ?? "—"}-
@@ -114,12 +151,16 @@ export default function App({ page }: { page: Page }) {
               {dash.paused ? "PAUSADA" : "ACTIVA"}
             </span>
             {dash.scheduler_enabled
-              ? ` — watchdog cada ${pollMin} min (timeout ${dash.exec_timeout_min} min)`
+              ? ` — seguimiento cada ${pollMin} min (timeout lote ${dash.exec_timeout_min} min)`
               : " — scheduler deshabilitado en servidor"}
+          </p>
+          <p className="muted">
+            Sectores de <strong>{dash.batch_size}</strong> correos por ejecución n8n. El
+            watchdog revisa cada {pollMin} min si el lote del día ya terminó en BD.
           </p>
           {dash.last_poll_at && (
             <p className="muted">
-              Último poll: {new Date(dash.last_poll_at).toLocaleString()}
+              Último seguimiento: {new Date(dash.last_poll_at).toLocaleString()}
             </p>
           )}
           {dash.n8n_running_count > 0 && (
@@ -205,6 +246,44 @@ export default function App({ page }: { page: Page }) {
           )}
         </div>
 
+        {(dash.sync_in_progress || dash.processing_date) && (
+          <div className={`card card-secondary ${dash.sync_in_progress ? "card-active-flow" : ""}`}>
+            <h2>
+              {dash.sync_in_progress ? "Proceso en curso" : "Día en seguimiento"}
+              {dash.n8n_flow_active && (
+                <span className="flow-pulse"> · n8n ejecutando</span>
+              )}
+            </h2>
+            <p>
+              <strong>Día:</strong> {dayLabel}{" "}
+              {dash.day_status && (
+                <span className={statusClass(dash.day_status)}>{dash.day_status}</span>
+              )}
+            </p>
+            {dash.day_listed > 0 ? (
+              <>
+                <div className="progress progress-day">
+                  <div style={{ width: `${Math.min(dash.day_percent, 100)}%` }} />
+                </div>
+                <p>
+                  Correos del día: <strong>{dash.day_processed}</strong> / {dash.day_listed}{" "}
+                  procesados ({dash.day_percent}%) · <strong>{dash.day_match}</strong> con match
+                </p>
+              </>
+            ) : (
+              <p className="muted">
+                Sin listado aún en BD para este día (pendiente o sin correos).
+              </p>
+            )}
+            {dash.active_run_started_at && (
+              <p className="muted">
+                Lote iniciado: {formatDateTime(dash.active_run_started_at)}
+                {dash.active_run_id ? ` (run #${dash.active_run_id})` : ""}
+              </p>
+            )}
+          </div>
+        )}
+
         {dash.paused && (
           <div className="card card-secondary">
             <h2>Sincronización manual</h2>
@@ -260,10 +339,14 @@ export default function App({ page }: { page: Page }) {
       if (historyFilter === "all") return true;
       if (historyFilter === "pending") return d.status === "pending";
       if (historyFilter === "completed") return d.status === "completed";
-      return d.status !== "pending" && d.status !== "completed";
+      if (historyFilter === "partial") return d.status === "partial";
+      return d.status !== "pending" && d.status !== "completed" && d.status !== "partial";
     });
     const completedCount = days.filter((d) => d.status === "completed").length;
     const pendingCount = days.filter((d) => d.status === "pending").length;
+    const partialCount = days.filter((d) => d.status === "partial").length;
+    const monthLabel =
+      MONTH_LABELS.find((m) => m.value === historyMonth)?.label ?? "Todos los meses";
 
     return (
       <section>
@@ -273,7 +356,7 @@ export default function App({ page }: { page: Page }) {
           {dash?.program_range_start ?? "2025-01-01"} →{" "}
           {dash?.program_range_end ?? "2026-06-30"})
         </p>
-        <div className="toolbar">
+        <div className="toolbar toolbar-wrap">
           <label>
             Año{" "}
             <select
@@ -285,6 +368,19 @@ export default function App({ page }: { page: Page }) {
             </select>
           </label>
           <label>
+            Mes{" "}
+            <select
+              value={historyMonth}
+              onChange={(e) => setHistoryMonth(Number(e.target.value))}
+            >
+              {MONTH_LABELS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Estado{" "}
             <select
               value={historyFilter}
@@ -293,11 +389,13 @@ export default function App({ page }: { page: Page }) {
               <option value="all">Todos</option>
               <option value="completed">Completados</option>
               <option value="pending">Pendientes</option>
-              <option value="other">Parcial / fallido</option>
+              <option value="partial">Parcial (lotes)</option>
+              <option value="other">Fallido / otro</option>
             </select>
           </label>
           <span className="muted">
-            {completedCount} completados · {pendingCount} pendientes en este año
+            {historyYear} · {monthLabel}: {completedCount} completados · {partialCount}{" "}
+            parcial · {pendingCount} pendientes
           </span>
         </div>
         <div className="table-wrap">
@@ -337,38 +435,82 @@ export default function App({ page }: { page: Page }) {
   }
 
   if (page === "trace") {
+    const applyTraceRange = () => {
+      if (!traceDraftFrom || !traceDraftTo) return;
+      setTraceFromDt(traceDraftFrom);
+      setTraceToDt(traceDraftTo);
+      setTraceRangeActive(true);
+    };
+
+    const clearTraceRange = () => {
+      setTraceRangeActive(false);
+      setTraceFromDt("");
+      setTraceToDt("");
+      setTraceDraftFrom("");
+      setTraceDraftTo("");
+    };
+
     return (
       <section>
         <h1>Correos con match</h1>
         <p className="muted">
-          Pulsa <strong>Ver contenido</strong> para leer el cuerpo completo del correo.
+          Por defecto se muestran los <strong>últimos 20</strong> correos con match.
+          Pulsa <strong>Ver contenido</strong> para leer el cuerpo completo.
         </p>
-        <div className="toolbar">
-          <label>
-            Filtrar por día{" "}
-            <input
-              type="date"
-              value={traceDate}
-              min="2025-01-01"
-              max="2026-06-30"
-              onChange={(e) => setTraceDate(e.target.value)}
-            />
-          </label>
-          {traceDate && (
+        <div className="card card-secondary trace-filters">
+          <h2>Filtro por fecha y hora</h2>
+          <div className="toolbar toolbar-wrap">
+            <label>
+              Desde{" "}
+              <input
+                type="datetime-local"
+                value={traceDraftFrom}
+                min="2025-01-01T00:00"
+                max="2026-06-30T23:59"
+                onChange={(e) => setTraceDraftFrom(e.target.value)}
+              />
+            </label>
+            <label>
+              Hasta{" "}
+              <input
+                type="datetime-local"
+                value={traceDraftTo}
+                min={traceDraftFrom || "2025-01-01T00:00"}
+                max="2026-06-30T23:59"
+                onChange={(e) => setTraceDraftTo(e.target.value)}
+              />
+            </label>
             <button
               type="button"
-              className="btn btn-ghost"
-              onClick={() => setTraceDate("")}
+              className="btn btn-primary"
+              disabled={!traceDraftFrom || !traceDraftTo}
+              onClick={applyTraceRange}
             >
-              Quitar filtro
+              Aplicar rango
             </button>
+            {traceRangeActive && (
+              <button type="button" className="btn btn-ghost" onClick={clearTraceRange}>
+                Ver últimos 20
+              </button>
+            )}
+          </div>
+          {traceRangeActive && traceFromDt && traceToDt && (
+            <p className="muted">
+              Rango activo: {formatDateTime(datetimeLocalToIso(traceFromDt))} →{" "}
+              {formatDateTime(datetimeLocalToIso(traceToDt))} · hasta 200 resultados
+            </p>
           )}
         </div>
+        <p className="muted">
+          {traceRangeActive
+            ? `Mostrando ${traces.length} correo(s) en el rango`
+            : `Mostrando los últimos ${traces.length} correo(s)`}
+        </p>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Fecha</th>
+                <th>Fecha / hora</th>
                 <th>Asunto</th>
                 <th>De</th>
                 <th>Telemetría</th>
@@ -379,7 +521,7 @@ export default function App({ page }: { page: Page }) {
             <tbody>
               {traces.map((t) => (
                 <tr key={t.message_id}>
-                  <td>{t.email_date?.slice(0, 10) ?? "—"}</td>
+                  <td>{formatDateTime(t.email_date)}</td>
                   <td>{t.subject ?? "—"}</td>
                   <td>{t.from_address ?? "—"}</td>
                   <td>{t.match_telemetria_keyword ?? "—"}</td>
@@ -412,8 +554,9 @@ export default function App({ page }: { page: Page }) {
     <section>
       <h1>Log de ejecuciones</h1>
       <p className="muted">
-        Inicios, pausas, reanudaciones, cancelaciones, timeouts y pruebas n8n. Solo
-        debe haber una fila «En curso» a la vez.
+        Inicios, pausas, reanudaciones, cancelaciones, timeouts, lotes parciales
+        (<code>batch_partial</code>) y cierre de día (<code>batch_day_completed</code>).
+        Solo debe haber una fila «En curso» a la vez.
       </p>
       <div className="table-wrap">
         <table>

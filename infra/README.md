@@ -31,3 +31,5 @@ Credencial en n8n: host **`postgres-telemetria`**, puerto **5432**.
 Implicancias: [fase_0_implicancias_postgres_docker.md](../fase_0_implicancias_postgres_docker.md)
 
 Control histórico: [estructura_program_control.md](../estructura_program_control.md)
+
+Visión completa (stack + automatización webhook): [infra_total.md](../infra_total.md)

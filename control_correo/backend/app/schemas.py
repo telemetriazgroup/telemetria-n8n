@@ -8,6 +8,8 @@ class DashboardOut(BaseModel):
     days_completed: int
     days_total: int
     percent: float
+    days_with_match: int
+    total_match_emails: int
     active_year: Optional[int]
     active_month: Optional[int]
     current_window_start: Optional[date]
@@ -18,6 +20,17 @@ class DashboardOut(BaseModel):
     n8n_configured: bool
     active_n8n_execution_id: Optional[str] = None
     n8n_running_count: int = 0
+    n8n_flow_active: bool = False
+    sync_in_progress: bool = False
+    active_run_id: Optional[int] = None
+    active_run_started_at: Optional[datetime] = None
+    processing_date: Optional[date] = None
+    day_status: Optional[str] = None
+    day_listed: int = 0
+    day_processed: int = 0
+    day_match: int = 0
+    day_percent: float = 0.0
+    batch_size: int = 5
     program_range_start: date
     program_range_end: date
     poll_interval_sec: int

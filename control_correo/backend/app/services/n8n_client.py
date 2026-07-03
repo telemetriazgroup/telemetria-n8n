@@ -26,6 +26,15 @@ class N8nClient:
     def monitor_configured(self) -> bool:
         return bool(settings.n8n_api_key)
 
+    def workflow_is_running(self) -> bool:
+        if not self.monitor_configured():
+            return False
+        running = self.list_running_executions()
+        wid = settings.n8n_workflow_id
+        if wid:
+            return any(str(ex.get("workflowId")) == wid for ex in running)
+        return len(running) > 0
+
     def list_running_executions(self) -> list[dict[str, Any]]:
         if not self.monitor_configured():
             return []
@@ -139,6 +148,7 @@ class N8nClient:
             "mode": "historical",
             "startDate": start_date,
             "endDate": end_date,
+            "batchSize": settings.n8n_batch_size,
         }
         path = (settings.n8n_webhook_path or "historico-run").lstrip("/")
         url = f"/webhook/{path}"
