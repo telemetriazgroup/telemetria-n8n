@@ -62,7 +62,7 @@ Histórico manual → Config histórico (startDate, endDate, mode=historical)
   → Planificar días pendientes (1 día pendiente por vuelta; 0 previos = empieza en startDate)
   → ¿Hay días pendientes?
        → Construir consulta Gmail (solo ESE día, sin filtro keywords en API)
-       → Listar IDs Gmail → Filtrar solo nuevos → **Sector lote** (máx. 10 por ejecución)
+       → Listar IDs Gmail → Filtrar solo nuevos → **Sector lote** (máx. 5 por vuelta)
        → Leer → Normalizar → Filtrar recibidos relevantes
        → Guardar email_trace (solo matches) + adjuntos PDF
        → Registrar día histórico → Guardar resumen día
@@ -89,14 +89,15 @@ El workflow procesa **como máximo `batchSize` correos nuevos por ejecución** (
 ### Comportamiento
 
 1. **Listar IDs Gmail** obtiene todos los recibidos del día.
-2. **Filtrar solo nuevos** excluye IDs ya en `email_trace` (modo `historical`).
+2. **Filtrar solo nuevos** excluye IDs ya en `email_trace` **y** en
+   `email_history_day.message_ids_processed` (todos los leídos del día, con o sin match).
 3. **Sector lote** (`code-nodes/06a-sector-lote.js`) toma solo los primeros N pendientes.
 4. Tras guardar trazas, **Registrar día histórico** hace *upsert* en `email_history_day`:
    - **`partial`**: quedan IDs por procesar; acumula `message_ids_processed` en JSONB.
    - **`completed`**: todos los listados del día están procesados (o día vacío).
 5. Tras **Guardar resumen día** el flujo **vuelve a Obtener días analizados**:
    - Si el día quedó **`partial`**, planifica el mismo día y **Sector lote** toma los
-     siguientes 5 correos (los ya procesados se excluyen vía `email_trace`).
+     siguientes 5 correos (excluye IDs ya en `email_trace` y en `message_ids_processed`).
    - Si el día quedó **`completed`**, planifica el **siguiente día** pendiente del rango.
    - Cuando no quedan días pendientes, **¿Hay días pendientes?** cierra la ejecución.
 
@@ -242,9 +243,11 @@ Casos que deben cerrar el día igual (para que el loop continúe):
 
 | Caso | Comportamiento |
 |------|----------------|
-| Día con correos pero **sin match** | Item `_cerrarDiaHistorico` → Registrar |
-| Match **sin PDF** | Guardar trazabilidad → Registrar |
-| Día sin correos | ¿Día vacío histórico? → Registrar |
+| Día con correos pero **sin match** | Item `_cerrarDiaHistorico` → **Pasar a registrar** → merge en `email_history_day` (IDs procesados) |
+| Día con **match** | Guardar trazabilidad → adjuntos (si hay PDF) → **Pasar a registrar** → Guardar resumen día |
+| Lote **partial** | Bucle vuelve a planificar; **Obtener IDs en BD** excluye `email_trace` + `message_ids_processed` |
+| Match **sin PDF** | Guardar trazabilidad → Pasar a registrar → Guardar resumen día |
+| Día sin correos | ¿Día vacío histórico? → Registrar → Guardar resumen día |
 
 ---
 

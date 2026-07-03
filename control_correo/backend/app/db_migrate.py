@@ -27,6 +27,21 @@ ON CONFLICT (year, month) DO UPDATE SET enabled = EXCLUDED.enabled;
 DELETE FROM control_schedule WHERE year > 2026 OR (year = 2026 AND month > 6);
 """
 
+RUN_ACTIONS_SQL = """
+ALTER TABLE control_run DROP CONSTRAINT IF EXISTS control_run_action_check;
+
+ALTER TABLE control_run ADD CONSTRAINT control_run_action_check
+    CHECK (action IN (
+        'launch',
+        'retry_same',
+        'slide_window',
+        'stop',
+        'wait',
+        'batch_partial',
+        'batch_day_completed'
+    ));
+"""
+
 
 def _candidate_paths(name: str) -> list[Path]:
     paths: list[Path] = [Path("/app/migrations") / name]
@@ -94,3 +109,10 @@ def ensure_control_schema() -> None:
             fallback=RANGE_2025_SQL,
         )
         logger.debug("Rango 2025–jun 2026 verificado")
+
+        _apply_sql_file(
+            conn,
+            "08-control-correo-run-actions.sql",
+            fallback=RUN_ACTIONS_SQL,
+        )
+        logger.debug("Acciones control_run ampliadas (08)")

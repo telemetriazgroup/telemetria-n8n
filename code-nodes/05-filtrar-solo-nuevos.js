@@ -1,9 +1,9 @@
-// ── Filtrar solo correos no registrados en email_trace ─────────────────────
+// ── Filtrar solo correos no registrados en email_trace / email_history_day ───
 // Entrada: respuesta de Gmail messages.list → { messages: [{ id, threadId }] }
 //
 // Requiere que en el MISMO run hayan ejecutado antes:
 //   Construir consulta Gmail → Listar IDs Gmail → (este nodo)
-//   Construir consulta Gmail → Obtener IDs en BD (rama paralela, puede 0 filas)
+//   Construir consulta Gmail → Obtener IDs en BD (rama paralela; UNION trace + procesados del día)
 //
 // Si Configuración.skipKnownInDb = false, deja pasar todos.
 

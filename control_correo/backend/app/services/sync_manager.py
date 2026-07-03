@@ -22,6 +22,18 @@ from app.services.planner import decide_window
 logger = logging.getLogger(__name__)
 _n8n = N8nClient()
 
+VALID_RUN_ACTIONS = frozenset(
+    {
+        "launch",
+        "retry_same",
+        "slide_window",
+        "stop",
+        "wait",
+        "batch_partial",
+        "batch_day_completed",
+    }
+)
+
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -112,7 +124,15 @@ def finalize_run(
     run.days_completed_after = count_completed(db)
     run.note = note
     if action:
-        run.action = action
+        if action in VALID_RUN_ACTIONS:
+            run.action = action
+        else:
+            logger.warning(
+                "finalize_run: acción %r ignorada (status=%s run=%s)",
+                action,
+                status,
+                run.id,
+            )
 
 
 def log_control_event(
@@ -314,7 +334,6 @@ def evaluate_active_run(db: Session, state: ControlState) -> str | None:
             db,
             active,
             status="completed",
-            action="completed",
             note=f"Watchdog: ventana {ws}–{we} completada en email_history_day",
         )
         stop_n8n_executions(state)

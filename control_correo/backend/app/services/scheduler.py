@@ -25,6 +25,7 @@ def watchdog_tick() -> None:
     try:
         state = get_or_create_state(db)
         state.last_poll_at = utcnow()
+        db.commit()
 
         result = evaluate_active_run(db, state)
         db.commit()

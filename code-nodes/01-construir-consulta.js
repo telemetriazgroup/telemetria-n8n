@@ -111,7 +111,17 @@ if (cfg.keywordFilterEnabled !== false && mode !== 'historical') {
 let knownIdsQuery;
 if (mode === 'historical') {
   const d = processDate.replace(/'/g, '');
-  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'historical' AND search_after::date = '${d}'::date`;
+  // email_trace = solo matches; email_history_day.message_ids_processed = todos los leídos
+  knownIdsQuery = `
+SELECT message_id FROM email_trace
+WHERE trace_status = 'active'
+  AND review_mode = 'historical'
+  AND (search_after::date = '${d}'::date OR email_date::date = '${d}'::date)
+UNION
+SELECT jsonb_array_elements_text(message_ids_processed) AS message_id
+FROM email_history_day
+WHERE analyzed_date = '${d}'::date
+`.trim();
 } else if (mode === 'range') {
   const start = String(cfg.startDate).trim();
   const end = String(cfg.endDate).trim();

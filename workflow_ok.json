@@ -378,7 +378,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Construir consulta Gmail ─────────────────────────────────────────────────\n// Modos — leer Config histórico o Configuración (compatible runOnceForEachItem)\n\nfunction nodeJson(nodeName) {\n  try {\n    const items = $(nodeName).all();\n    if (items && items.length && items[0].json) return items[0].json;\n  } catch (e) { /* nodo no ejecutado en esta rama */ }\n  return null;\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    const j = nodeJson(name);\n    if (j && (j.mode || j.startDate !== undefined)) return j;\n  }\n  throw new Error('Ejecuta Configuración o Config histórico antes de este nodo.');\n}\n\nfunction inputJson() {\n  try {\n    const item = $input.item;\n    if (item && item.json) return item.json;\n  } catch (e) { /* runOnceForAllItems */ }\n  const all = $input.all();\n  return (all[0] && all[0].json) || {};\n}\n\nconst cfg = getCfg();\nconst dayItem = inputJson();\nconst tzOffset = Number(cfg.tzOffsetHours ?? -5);\nconst mode = String(dayItem.mode || cfg.mode || 'incremental').toLowerCase();\n\nfunction startOfDayEpoch(y, monthIndex, d) {\n  return Math.floor(Date.UTC(y, monthIndex, d, 0, 0, 0) / 1000) - tzOffset * 3600;\n}\n\nfunction localTodayParts() {\n  const localMs = Date.now() + tzOffset * 3600 * 1000;\n  const ld = new Date(localMs);\n  return { y: ld.getUTCFullYear(), m: ld.getUTCMonth(), d: ld.getUTCDate() };\n}\n\nfunction epochFromYmd(ymd) {\n  const [y, m, d] = String(ymd).split('-').map(Number);\n  return startOfDayEpoch(y, m - 1, d);\n}\n\nlet afterEpoch;\nlet beforeEpoch;\nlet processDate = null;\n\nif (mode === 'historical') {\n  processDate = String(dayItem.processDate || '').trim();\n  if (!processDate) {\n    throw new Error('Modo historical: falta processDate (Planificar días pendientes).');\n  }\n  afterEpoch = epochFromYmd(processDate);\n  beforeEpoch = afterEpoch + 86400;\n} else if (mode === 'range') {\n  if (!cfg.startDate || !cfg.endDate) {\n    throw new Error('Modo \"range\": indica startDate y endDate (YYYY-MM-DD) en Configuración.');\n  }\n  afterEpoch = epochFromYmd(cfg.startDate);\n  beforeEpoch = epochFromYmd(cfg.endDate) + 86400;\n} else if (mode === 'today') {\n  const { y, m, d } = localTodayParts();\n  afterEpoch = startOfDayEpoch(y, m, d);\n  beforeEpoch = afterEpoch + 86400;\n} else {\n  beforeEpoch = Math.floor(Date.now() / 1000);\n  const { y, m, d } = localTodayParts();\n  afterEpoch = startOfDayEpoch(y, m, d);\n\n  const last = nodeJson('Obtener última revisión') || {};\n  const lastEpoch = Number(last.last_search_before_epoch || 0);\n  if (lastEpoch > 0) {\n    const lastLocalMs = lastEpoch * 1000 + tzOffset * 3600 * 1000;\n    const ld = new Date(lastLocalMs);\n    const sameDay =\n      ld.getUTCFullYear() === y &&\n      ld.getUTCMonth() === m &&\n      ld.getUTCDate() === d;\n    if (sameDay && lastEpoch < beforeEpoch) {\n      afterEpoch = lastEpoch;\n    }\n  }\n}\n\nlet q = `after:${afterEpoch} before:${beforeEpoch}`;\n\nif (cfg.receivedOnly !== false) {\n  const mailbox = String(cfg.monitorMailbox || 'telemetria@zgroup.com.pe').trim();\n  q += ' -in:sent';\n  if (mailbox) q += ` -from:${mailbox}`;\n}\n\n// En historical: NO filtrar en Gmail — se listan todos los recibidos del día\nif (cfg.keywordFilterEnabled !== false && mode !== 'historical') {\n  const telemetriaKws = Array.isArray(cfg.telemetriaVariants) && cfg.telemetriaVariants.length\n    ? cfg.telemetriaVariants\n    : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'];\n  const persons = Array.isArray(cfg.keywords) && cfg.keywords.length\n    ? cfg.keywords\n    : ['Luis', 'Eusebio'];\n  const telPart = telemetriaKws.map(k => `\"${String(k).trim()}\"`).filter(Boolean).join(' OR ');\n  const personPart = persons.map(k => `\"${String(k).trim()}\"`).filter(Boolean).join(' OR ');\n  if (telPart && personPart) q += ` (${telPart}) (${personPart})`;\n}\n\nlet knownIdsQuery;\nif (mode === 'historical') {\n  const d = processDate.replace(/'/g, '');\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'historical' AND search_after::date = '${d}'::date`;\n} else if (mode === 'range') {\n  const start = String(cfg.startDate).trim();\n  const end = String(cfg.endDate).trim();\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'range' AND email_date >= '${start}'::date AND email_date < ('${end}'::date + INTERVAL '1 day')`;\n} else {\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'incremental' AND search_before::date = CURRENT_DATE`;\n}\n\nreturn [{\n  json: {\n    gmailQuery: q,\n    reviewMode: mode,\n    processDate,\n    knownIdsQuery,\n    afterEpoch,\n    beforeEpoch,\n    afterIso: new Date(afterEpoch * 1000).toISOString(),\n    beforeIso: new Date(beforeEpoch * 1000).toISOString(),\n    searchWindow: `${new Date(afterEpoch * 1000).toISOString()} → ${new Date(beforeEpoch * 1000).toISOString()}`,\n    rangeStart: mode === 'historical' ? (dayItem.rangeStart || cfg.startDate) : (mode === 'range' ? String(cfg.startDate) : null),\n    rangeEnd: mode === 'historical' ? (dayItem.rangeEnd || cfg.endDate) : (mode === 'range' ? String(cfg.endDate) : null)\n  }\n}];\n"
+        "jsCode": "// ── Construir consulta Gmail ─────────────────────────────────────────────────\n// Modos — leer Config histórico o Configuración (compatible runOnceForEachItem)\n\nfunction nodeJson(nodeName) {\n  try {\n    const items = $(nodeName).all();\n    if (items && items.length && items[0].json) return items[0].json;\n  } catch (e) { /* nodo no ejecutado en esta rama */ }\n  return null;\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    const j = nodeJson(name);\n    if (j && (j.mode || j.startDate !== undefined)) return j;\n  }\n  throw new Error('Ejecuta Configuración o Config histórico antes de este nodo.');\n}\n\nfunction inputJson() {\n  try {\n    const item = $input.item;\n    if (item && item.json) return item.json;\n  } catch (e) { /* runOnceForAllItems */ }\n  const all = $input.all();\n  return (all[0] && all[0].json) || {};\n}\n\nconst cfg = getCfg();\nconst dayItem = inputJson();\nconst tzOffset = Number(cfg.tzOffsetHours ?? -5);\nconst mode = String(dayItem.mode || cfg.mode || 'incremental').toLowerCase();\n\nfunction startOfDayEpoch(y, monthIndex, d) {\n  return Math.floor(Date.UTC(y, monthIndex, d, 0, 0, 0) / 1000) - tzOffset * 3600;\n}\n\nfunction localTodayParts() {\n  const localMs = Date.now() + tzOffset * 3600 * 1000;\n  const ld = new Date(localMs);\n  return { y: ld.getUTCFullYear(), m: ld.getUTCMonth(), d: ld.getUTCDate() };\n}\n\nfunction epochFromYmd(ymd) {\n  const [y, m, d] = String(ymd).split('-').map(Number);\n  return startOfDayEpoch(y, m - 1, d);\n}\n\nlet afterEpoch;\nlet beforeEpoch;\nlet processDate = null;\n\nif (mode === 'historical') {\n  processDate = String(dayItem.processDate || '').trim();\n  if (!processDate) {\n    throw new Error('Modo historical: falta processDate (Planificar días pendientes).');\n  }\n  afterEpoch = epochFromYmd(processDate);\n  beforeEpoch = afterEpoch + 86400;\n} else if (mode === 'range') {\n  if (!cfg.startDate || !cfg.endDate) {\n    throw new Error('Modo \"range\": indica startDate y endDate (YYYY-MM-DD) en Configuración.');\n  }\n  afterEpoch = epochFromYmd(cfg.startDate);\n  beforeEpoch = epochFromYmd(cfg.endDate) + 86400;\n} else if (mode === 'today') {\n  const { y, m, d } = localTodayParts();\n  afterEpoch = startOfDayEpoch(y, m, d);\n  beforeEpoch = afterEpoch + 86400;\n} else {\n  beforeEpoch = Math.floor(Date.now() / 1000);\n  const { y, m, d } = localTodayParts();\n  afterEpoch = startOfDayEpoch(y, m, d);\n\n  const last = nodeJson('Obtener última revisión') || {};\n  const lastEpoch = Number(last.last_search_before_epoch || 0);\n  if (lastEpoch > 0) {\n    const lastLocalMs = lastEpoch * 1000 + tzOffset * 3600 * 1000;\n    const ld = new Date(lastLocalMs);\n    const sameDay =\n      ld.getUTCFullYear() === y &&\n      ld.getUTCMonth() === m &&\n      ld.getUTCDate() === d;\n    if (sameDay && lastEpoch < beforeEpoch) {\n      afterEpoch = lastEpoch;\n    }\n  }\n}\n\nlet q = `after:${afterEpoch} before:${beforeEpoch}`;\n\nif (cfg.receivedOnly !== false) {\n  const mailbox = String(cfg.monitorMailbox || 'telemetria@zgroup.com.pe').trim();\n  q += ' -in:sent';\n  if (mailbox) q += ` -from:${mailbox}`;\n}\n\n// En historical: NO filtrar en Gmail — se listan todos los recibidos del día\nif (cfg.keywordFilterEnabled !== false && mode !== 'historical') {\n  const telemetriaKws = Array.isArray(cfg.telemetriaVariants) && cfg.telemetriaVariants.length\n    ? cfg.telemetriaVariants\n    : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'];\n  const persons = Array.isArray(cfg.keywords) && cfg.keywords.length\n    ? cfg.keywords\n    : ['Luis', 'Eusebio'];\n  const telPart = telemetriaKws.map(k => `\"${String(k).trim()}\"`).filter(Boolean).join(' OR ');\n  const personPart = persons.map(k => `\"${String(k).trim()}\"`).filter(Boolean).join(' OR ');\n  if (telPart && personPart) q += ` (${telPart}) (${personPart})`;\n}\n\nlet knownIdsQuery;\nif (mode === 'historical') {\n  const d = processDate.replace(/'/g, '');\n  // email_trace = solo matches; email_history_day.message_ids_processed = todos los leídos\n  knownIdsQuery = `\nSELECT message_id FROM email_trace\nWHERE trace_status = 'active'\n  AND review_mode = 'historical'\n  AND (search_after::date = '${d}'::date OR email_date::date = '${d}'::date)\nUNION\nSELECT jsonb_array_elements_text(message_ids_processed) AS message_id\nFROM email_history_day\nWHERE analyzed_date = '${d}'::date\n`.trim();\n} else if (mode === 'range') {\n  const start = String(cfg.startDate).trim();\n  const end = String(cfg.endDate).trim();\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'range' AND email_date >= '${start}'::date AND email_date < ('${end}'::date + INTERVAL '1 day')`;\n} else {\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'incremental' AND search_before::date = CURRENT_DATE`;\n}\n\nreturn [{\n  json: {\n    gmailQuery: q,\n    reviewMode: mode,\n    processDate,\n    knownIdsQuery,\n    afterEpoch,\n    beforeEpoch,\n    afterIso: new Date(afterEpoch * 1000).toISOString(),\n    beforeIso: new Date(beforeEpoch * 1000).toISOString(),\n    searchWindow: `${new Date(afterEpoch * 1000).toISOString()} → ${new Date(beforeEpoch * 1000).toISOString()}`,\n    rangeStart: mode === 'historical' ? (dayItem.rangeStart || cfg.startDate) : (mode === 'range' ? String(cfg.startDate) : null),\n    rangeEnd: mode === 'historical' ? (dayItem.rangeEnd || cfg.endDate) : (mode === 'range' ? String(cfg.endDate) : null)\n  }\n}];\n"
       },
       "id": "node-buildquery",
       "name": "Construir consulta Gmail",
@@ -450,7 +450,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Filtrar solo correos no registrados en email_trace ─────────────────────\n// Entrada: respuesta de Gmail messages.list → { messages: [{ id, threadId }] }\n//\n// Requiere que en el MISMO run hayan ejecutado antes:\n//   Construir consulta Gmail → Listar IDs Gmail → (este nodo)\n//   Construir consulta Gmail → Obtener IDs en BD (rama paralela, puede 0 filas)\n//\n// Si Configuración.skipKnownInDb = false, deja pasar todos.\n\nfunction safeAll(nodeName) {\n  try {\n    return $(nodeName).all() || [];\n  } catch (e) {\n    return [];\n  }\n}\n\nfunction safeFirstJson(nodeName) {\n  try {\n    return $(nodeName).first()?.json || null;\n  } catch (e) {\n    return null;\n  }\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Configuración o Config histórico.');\n}\n\nconst cfg = getCfg();\nconst skipKnown = cfg.skipKnownInDb !== false;\n\nfunction qinfoForDay() {\n  try {\n    const j = $('Construir consulta Gmail').item?.json;\n    if (j && j.gmailQuery) return j;\n  } catch (e) { /* optional */ }\n  return safeFirstJson('Construir consulta Gmail');\n}\n\nconst qinfo = qinfoForDay();\nif (!qinfo || !qinfo.gmailQuery) {\n  throw new Error(\n    'Falta ejecutar \"Construir consulta Gmail\" antes de \"Filtrar solo nuevos\".'\n  );\n}\n\nfunction knownIdsForCurrentDay() {\n  const ids = new Set();\n  try {\n    const paired = $('Obtener IDs en BD').item;\n    if (paired && paired.json && paired.json.message_id) {\n      ids.add(paired.json.message_id);\n      return ids;\n    }\n  } catch (e) { /* optional */ }\n  for (const item of safeAll('Obtener IDs en BD')) {\n    const id = item.json && item.json.message_id;\n    if (id) ids.add(id);\n  }\n  return ids;\n}\n\nconst known = knownIdsForCurrentDay();\n\nconst listResp = $input.first().json;\nconst messages = Array.isArray(listResp.messages) ? listResp.messages : [];\n\nif (!messages.length) {\n  return [{\n    json: {\n      _empty: true,\n      reason: 'sin_correos_en_gmail',\n      totalListed: 0,\n      totalNew: 0,\n      _qinfo: qinfo,\n      _dayCtx: {\n        processDate: qinfo.processDate,\n        rangeStart: qinfo.rangeStart,\n        rangeEnd: qinfo.rangeEnd\n      }\n    }\n  }];\n}\n\nconst nuevos = messages.filter(m => m && m.id && (!skipKnown || !known.has(m.id)));\n\nif (!nuevos.length) {\n  return [{\n    json: {\n      _empty: true,\n      reason: 'todos_ya_en_bd',\n      totalListed: messages.length,\n      totalKnown: known.size,\n      totalNew: 0,\n      gmailQuery: qinfo.gmailQuery,\n      _qinfo: qinfo,\n      _dayCtx: {\n        processDate: qinfo.processDate,\n        rangeStart: qinfo.rangeStart,\n        rangeEnd: qinfo.rangeEnd\n      }\n    }\n  }];\n}\n\nreturn nuevos.map(m => ({\n  json: {\n    id: m.id,\n    threadId: m.threadId,\n    gmailQuery: qinfo.gmailQuery,\n    reviewMode: qinfo.reviewMode,\n    _qinfo: qinfo,\n    _dayCtx: {\n      processDate: qinfo.processDate,\n      rangeStart: qinfo.rangeStart,\n      rangeEnd: qinfo.rangeEnd\n    },\n    _meta: {\n      totalListed: messages.length,\n      totalKnown: known.size,\n      totalNew: nuevos.length\n    }\n  }\n}));\n"
+        "jsCode": "// ── Filtrar solo correos no registrados en email_trace / email_history_day ───\n// Entrada: respuesta de Gmail messages.list → { messages: [{ id, threadId }] }\n//\n// Requiere que en el MISMO run hayan ejecutado antes:\n//   Construir consulta Gmail → Listar IDs Gmail → (este nodo)\n//   Construir consulta Gmail → Obtener IDs en BD (rama paralela; UNION trace + procesados del día)\n//\n// Si Configuración.skipKnownInDb = false, deja pasar todos.\n\nfunction safeAll(nodeName) {\n  try {\n    return $(nodeName).all() || [];\n  } catch (e) {\n    return [];\n  }\n}\n\nfunction safeFirstJson(nodeName) {\n  try {\n    return $(nodeName).first()?.json || null;\n  } catch (e) {\n    return null;\n  }\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Configuración o Config histórico.');\n}\n\nconst cfg = getCfg();\nconst skipKnown = cfg.skipKnownInDb !== false;\n\nfunction qinfoForDay() {\n  try {\n    const j = $('Construir consulta Gmail').item?.json;\n    if (j && j.gmailQuery) return j;\n  } catch (e) { /* optional */ }\n  return safeFirstJson('Construir consulta Gmail');\n}\n\nconst qinfo = qinfoForDay();\nif (!qinfo || !qinfo.gmailQuery) {\n  throw new Error(\n    'Falta ejecutar \"Construir consulta Gmail\" antes de \"Filtrar solo nuevos\".'\n  );\n}\n\nfunction knownIdsForCurrentDay() {\n  const ids = new Set();\n  try {\n    const paired = $('Obtener IDs en BD').item;\n    if (paired && paired.json && paired.json.message_id) {\n      ids.add(paired.json.message_id);\n      return ids;\n    }\n  } catch (e) { /* optional */ }\n  for (const item of safeAll('Obtener IDs en BD')) {\n    const id = item.json && item.json.message_id;\n    if (id) ids.add(id);\n  }\n  return ids;\n}\n\nconst known = knownIdsForCurrentDay();\n\nconst listResp = $input.first().json;\nconst messages = Array.isArray(listResp.messages) ? listResp.messages : [];\n\nif (!messages.length) {\n  return [{\n    json: {\n      _empty: true,\n      reason: 'sin_correos_en_gmail',\n      totalListed: 0,\n      totalNew: 0,\n      _qinfo: qinfo,\n      _dayCtx: {\n        processDate: qinfo.processDate,\n        rangeStart: qinfo.rangeStart,\n        rangeEnd: qinfo.rangeEnd\n      }\n    }\n  }];\n}\n\nconst nuevos = messages.filter(m => m && m.id && (!skipKnown || !known.has(m.id)));\n\nif (!nuevos.length) {\n  return [{\n    json: {\n      _empty: true,\n      reason: 'todos_ya_en_bd',\n      totalListed: messages.length,\n      totalKnown: known.size,\n      totalNew: 0,\n      gmailQuery: qinfo.gmailQuery,\n      _qinfo: qinfo,\n      _dayCtx: {\n        processDate: qinfo.processDate,\n        rangeStart: qinfo.rangeStart,\n        rangeEnd: qinfo.rangeEnd\n      }\n    }\n  }];\n}\n\nreturn nuevos.map(m => ({\n  json: {\n    id: m.id,\n    threadId: m.threadId,\n    gmailQuery: qinfo.gmailQuery,\n    reviewMode: qinfo.reviewMode,\n    _qinfo: qinfo,\n    _dayCtx: {\n      processDate: qinfo.processDate,\n      rangeStart: qinfo.rangeStart,\n      rangeEnd: qinfo.rangeEnd\n    },\n    _meta: {\n      totalListed: messages.length,\n      totalKnown: known.size,\n      totalNew: nuevos.length\n    }\n  }\n}));\n"
       },
       "id": "node-filter-new",
       "name": "Filtrar solo nuevos",
@@ -549,6 +549,19 @@
       "position": [
         2240,
         780
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Pasar a registrar (tras guardar trazas/adjuntos o sin matches) ───────────\n// Emite 1 item para disparar Registrar + Guardar resumen una sola vez por lote.\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all() || []; } catch (e) { return []; }\n}\n\nfunction sectorMessageIds() {\n  const ids = new Set();\n  for (const item of safeAll('Sector lote')) {\n    if (item.json && item.json.id) ids.add(item.json.id);\n  }\n  if (!ids.size) {\n    for (const item of safeAll('Filtrar solo nuevos')) {\n      if (item.json && item.json.id) ids.add(item.json.id);\n    }\n  }\n  return ids;\n}\n\nconst sectorIds = [...sectorMessageIds()];\nconst filtrarRow = safeAll('Filtrar solo nuevos')[0]?.json || {};\nconst dayCtx = filtrarRow._dayCtx || safeAll('Sector lote')[0]?.json?._dayCtx || {};\n\nreturn [{\n  json: {\n    _loteListo: true,\n    sectorCount: sectorIds.length,\n    _dayCtx: dayCtx\n  }\n}];\n"
+      },
+      "id": "node-pass-reg",
+      "name": "Pasar a registrar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3560,
+        680
       ]
     },
     {
@@ -668,7 +681,8 @@
           ]
         },
         "options": {
-          "skipOnConflict": true
+          "skipOnConflict": true,
+          "alwaysOutputData": true
         }
       },
       "id": "node-insert-trace",
@@ -688,14 +702,46 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Expandir adjuntos (una fila por referencia de adjunto) ──────────────────\n// Toma la salida del normalizador y emite un item por cada adjunto, con las\n// claves = columnas de email_attachment_ref. Si el correo no tiene adjuntos,\n// no emite nada para ese correo.\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const m = item.json;\n  const atts = Array.isArray(m.attachments) ? m.attachments : [];\n  for (const a of atts) {\n    out.push({\n      json: {\n        message_id:    m.message_id,\n        thread_id:     m.thread_id,\n        filename:      a.filename || '',\n        mime_type:     a.mime_type || '',\n        size_bytes:    a.size_bytes || 0,\n        attachment_id: a.attachment_id || '',\n        gmail_link:    m.gmail_link\n      }\n    });\n  }\n}\n\nreturn out;\n"
+        "jsCode": "// ── Expandir adjuntos (una fila por referencia de adjunto) ──────────────────\n// Lee Normalizar + IDs con match en este lote (no depende del $input de Postgres).\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all() || []; } catch (e) { return []; }\n}\n\nfunction sectorMessageIds() {\n  const ids = new Set();\n  for (const item of safeAll('Sector lote')) {\n    if (item.json && item.json.id) ids.add(item.json.id);\n  }\n  if (!ids.size) {\n    for (const item of safeAll('Filtrar solo nuevos')) {\n      if (item.json && item.json.id) ids.add(item.json.id);\n    }\n  }\n  return ids;\n}\n\nconst sectorIds = sectorMessageIds();\nconst matchIds = new Set(\n  safeAll('Filtrar recibidos relevantes')\n    .map(i => i.json && i.json.message_id)\n    .filter(id => id && !String(id).startsWith('_'))\n);\n\nconst out = [];\n\nfor (const item of safeAll('Normalizar correo')) {\n  const m = item.json;\n  if (!m || !m.message_id) continue;\n  if (sectorIds.size && !sectorIds.has(m.message_id)) continue;\n  if (matchIds.size && !matchIds.has(m.message_id)) continue;\n\n  const atts = Array.isArray(m.attachments) ? m.attachments : [];\n  for (const a of atts) {\n    out.push({\n      json: {\n        message_id: m.message_id,\n        thread_id: m.thread_id,\n        filename: a.filename || '',\n        mime_type: a.mime_type || '',\n        size_bytes: a.size_bytes || 0,\n        attachment_id: a.attachment_id || '',\n        gmail_link: m.gmail_link\n      }\n    });\n  }\n}\n\nif (!out.length) {\n  return [{ json: { _noAttachmentsInBatch: true } }];\n}\n\nreturn out;\n"
       },
       "id": "node-expand",
       "name": "Expandir adjuntos",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3120,
+        3340,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!($json.message_id && $json.filename) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-attach",
+      "name": "¿Hay adjuntos PDF?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3560,
         880
       ]
     },
@@ -722,7 +768,8 @@
           ]
         },
         "options": {
-          "skipOnConflict": true
+          "skipOnConflict": true,
+          "alwaysOutputData": true
         }
       },
       "id": "node-insert-attach",
@@ -742,7 +789,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Registrar resumen del día histórico ─────────────────────────────────────\n// Consolida IDs y genera SQL upsert seguro para email_history_day.\n// Soporta sectores (lotes): status partial hasta completar todos los listados.\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all() || []; } catch (e) { return []; }\n}\n\nfunction safeFirstJson(nodeName) {\n  try { return $(nodeName).first()?.json || null; } catch (e) { return null; }\n}\n\nfunction pgStr(v) {\n  return `'${String(v ?? '').replace(/'/g, \"''\")}'`;\n}\n\nfunction pgJson(arr) {\n  return `'${JSON.stringify(arr || [])}'::jsonb`;\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Configuración o Config histórico.');\n}\n\nconst cfg = getCfg();\nconst qinfoMain = safeFirstJson('Construir consulta Gmail') || {};\nconst filtrarRow = safeFirstJson('Filtrar solo nuevos') || safeFirstJson('Sector lote') || {};\nconst sectorRow = safeFirstJson('Sector lote') || {};\nconst dayCtx =\n  filtrarRow._dayCtx ||\n  sectorRow._dayCtx ||\n  $input.first()?.json?._dayCtx ||\n  {\n    processDate: qinfoMain.processDate,\n    rangeStart: qinfoMain.rangeStart || cfg.startDate,\n    rangeEnd: qinfoMain.rangeEnd || cfg.endDate\n  };\n\nconst processDate = dayCtx.processDate || qinfoMain.processDate;\nif (!processDate) {\n  throw new Error('Registrar día histórico: falta processDate del día en curso.');\n}\n\nconst listRespMain = safeFirstJson('Listar IDs Gmail') || {};\nconst qinfo =\n  (() => {\n    try {\n      const j = $('Construir consulta Gmail').item?.json;\n      if (j && j.gmailQuery) return j;\n    } catch (e) { /* optional */ }\n    return qinfoMain;\n  })();\nconst listResp =\n  (() => {\n    try {\n      return $('Listar IDs Gmail').item?.json || listRespMain;\n    } catch (e) {\n      return listRespMain;\n    }\n  })();\n\nconst listedIds = Array.isArray(listResp.messages)\n  ? listResp.messages.map(m => m && m.id).filter(Boolean)\n  : [];\n\nconst processedIds = safeAll('Normalizar correo')\n  .map(i => i.json.message_id)\n  .filter(Boolean);\n\nconst matchIds = safeAll('Filtrar recibidos relevantes')\n  .map(i => i.json.message_id)\n  .filter(Boolean);\n\nconst inputJson = $input.first()?.json || {};\nconst emptyMarker = inputJson._empty === true || inputJson._historicalEmptyDay === true;\nconst emptyReason = String(filtrarRow.reason || inputJson.reason || '');\n\nconst sector = sectorRow._sector || filtrarRow._sector || null;\n\nlet batchProcessed = processedIds;\nlet batchMatch = matchIds;\nlet statusHint = 'completed';\n\nif (emptyMarker && emptyReason === 'sin_correos_en_gmail') {\n  batchProcessed = [];\n  batchMatch = [];\n  statusHint = 'completed';\n} else if (emptyMarker && emptyReason === 'todos_ya_en_bd') {\n  batchProcessed = listedIds;\n  batchMatch = safeAll('Filtrar recibidos relevantes').map(i => i.json.message_id).filter(Boolean);\n  statusHint = 'completed';\n} else if (sector && sector.remainingAfter > 0) {\n  statusHint = 'partial';\n} else if (listedIds.length > 0 && batchProcessed.length < listedIds.length && sector) {\n  statusHint = sector.sectorComplete ? 'completed' : 'partial';\n} else if (listedIds.length > 0 && batchProcessed.length >= listedIds.length) {\n  statusHint = 'completed';\n}\n\nconst row = {\n  analyzed_date: processDate,\n  range_start: dayCtx.rangeStart || cfg.startDate,\n  range_end: dayCtx.rangeEnd || cfg.endDate,\n  gmail_query: qinfo.gmailQuery || '',\n  emails_listed_count: listedIds.length,\n  emails_processed_count: batchProcessed.length,\n  emails_match_count: batchMatch.length,\n  message_ids_listed: listedIds,\n  message_ids_processed: batchProcessed,\n  message_ids_match: batchMatch,\n  status: statusHint,\n  empty_day: emptyMarker && emptyReason === 'sin_correos_en_gmail',\n  empty_reason: emptyReason,\n  sector: sector || null\n};\n\nconst mergeProcSql = `\n  SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)\n  FROM (\n    SELECT jsonb_array_elements_text(COALESCE(email_history_day.message_ids_processed, '[]'::jsonb)) AS elem\n    UNION ALL\n    SELECT jsonb_array_elements_text(EXCLUDED.message_ids_processed) AS elem\n  ) u\n`.trim();\n\nconst mergeMatchSql = `\n  SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)\n  FROM (\n    SELECT jsonb_array_elements_text(COALESCE(email_history_day.message_ids_match, '[]'::jsonb)) AS elem\n    UNION ALL\n    SELECT jsonb_array_elements_text(EXCLUDED.message_ids_match) AS elem\n  ) u\n`.trim();\n\nconst upsertSql = `\nINSERT INTO email_history_day (\n  analyzed_date, range_start, range_end, gmail_query,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  message_ids_listed, message_ids_processed, message_ids_match,\n  status, analyzed_at\n) VALUES (\n  ${pgStr(row.analyzed_date)}::date,\n  ${pgStr(row.range_start)}::date,\n  ${pgStr(row.range_end)}::date,\n  ${pgStr(row.gmail_query)},\n  ${row.emails_listed_count},\n  ${row.emails_processed_count},\n  ${row.emails_match_count},\n  ${pgJson(row.message_ids_listed)},\n  ${pgJson(row.message_ids_processed)},\n  ${pgJson(row.message_ids_match)},\n  ${pgStr(row.status)},\n  now()\n)\nON CONFLICT (analyzed_date) DO UPDATE SET\n  range_start = EXCLUDED.range_start,\n  range_end = EXCLUDED.range_end,\n  gmail_query = EXCLUDED.gmail_query,\n  emails_listed_count = EXCLUDED.emails_listed_count,\n  message_ids_listed = EXCLUDED.message_ids_listed,\n  message_ids_processed = (${mergeProcSql}),\n  message_ids_match = (${mergeMatchSql}),\n  emails_processed_count = jsonb_array_length((${mergeProcSql})),\n  emails_match_count = jsonb_array_length((${mergeMatchSql})),\n  status = CASE\n    WHEN EXCLUDED.emails_listed_count = 0 THEN 'completed'\n    WHEN jsonb_array_length((${mergeProcSql})) >= EXCLUDED.emails_listed_count THEN 'completed'\n    ELSE 'partial'\n  END,\n  analyzed_at = now()\nRETURNING analyzed_date::text AS analyzed_date,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  status;\n`.trim();\n\nreturn [{ json: { ...row, upsertSql } }];\n"
+        "jsCode": "// ── Registrar resumen del día histórico ─────────────────────────────────────\n// Consolida IDs del LOTE ACTUAL (Sector lote) y genera upsert en email_history_day.\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all() || []; } catch (e) { return []; }\n}\n\nfunction safeFirstJson(nodeName) {\n  try { return $(nodeName).first()?.json || null; } catch (e) { return null; }\n}\n\nfunction pgStr(v) {\n  return `'${String(v ?? '').replace(/'/g, \"''\")}'`;\n}\n\nfunction pgJson(arr) {\n  return `'${JSON.stringify(arr || [])}'::jsonb`;\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Configuración o Config histórico.');\n}\n\nfunction sectorMessageIds() {\n  const ids = new Set();\n  for (const item of safeAll('Sector lote')) {\n    if (item.json && item.json.id) ids.add(item.json.id);\n  }\n  if (!ids.size) {\n    for (const item of safeAll('Filtrar solo nuevos')) {\n      if (item.json && item.json.id) ids.add(item.json.id);\n    }\n  }\n  return ids;\n}\n\nconst cfg = getCfg();\nconst qinfoMain = safeFirstJson('Construir consulta Gmail') || {};\nconst filtrarRow = safeFirstJson('Filtrar solo nuevos') || safeFirstJson('Sector lote') || {};\nconst sectorRow = safeFirstJson('Sector lote') || {};\nconst sectorIds = sectorMessageIds();\n\nconst dayCtx =\n  filtrarRow._dayCtx ||\n  sectorRow._dayCtx ||\n  $input.first()?.json?._dayCtx ||\n  {\n    processDate: qinfoMain.processDate,\n    rangeStart: qinfoMain.rangeStart || cfg.startDate,\n    rangeEnd: qinfoMain.rangeEnd || cfg.endDate\n  };\n\nconst processDate = dayCtx.processDate || qinfoMain.processDate;\nif (!processDate) {\n  throw new Error('Registrar día histórico: falta processDate del día en curso.');\n}\n\nconst qinfo =\n  (() => {\n    try {\n      const j = $('Construir consulta Gmail').item?.json;\n      if (j && j.gmailQuery) return j;\n    } catch (e) { /* optional */ }\n    return qinfoMain;\n  })();\n\nconst listResp =\n  (() => {\n    try {\n      return $('Listar IDs Gmail').item?.json || safeFirstJson('Listar IDs Gmail') || {};\n    } catch (e) {\n      return safeFirstJson('Listar IDs Gmail') || {};\n    }\n  })();\n\nconst listedIds = Array.isArray(listResp.messages)\n  ? listResp.messages.map(m => m && m.id).filter(Boolean)\n  : [];\n\n// Solo IDs del lote actual (evita mezclar vueltas anteriores del bucle n8n)\nconst processedIds = safeAll('Normalizar correo')\n  .filter(i => i.json && i.json.message_id && sectorIds.has(i.json.message_id))\n  .map(i => i.json.message_id);\n\nconst matchIds = safeAll('Filtrar recibidos relevantes')\n  .filter(i => {\n    const j = i.json || {};\n    return j.message_id && !j._cerrarDiaHistorico && sectorIds.has(j.message_id);\n  })\n  .map(i => i.json.message_id);\n\nconst inputJson = $input.first()?.json || {};\nconst emptyMarker = inputJson._empty === true || inputJson._historicalEmptyDay === true;\nconst emptyReason = String(filtrarRow.reason || inputJson.reason || '');\n\nconst sector = sectorRow._sector || filtrarRow._sector || null;\n\nlet batchProcessed = processedIds;\nlet batchMatch = matchIds;\nlet statusHint = 'completed';\n\nif (emptyMarker && emptyReason === 'sin_correos_en_gmail') {\n  batchProcessed = [];\n  batchMatch = [];\n  statusHint = 'completed';\n} else if (emptyMarker && emptyReason === 'todos_ya_en_bd') {\n  batchProcessed = listedIds;\n  batchMatch = matchIds;\n  statusHint = 'completed';\n} else if (sectorIds.size > 0 && batchProcessed.length === 0) {\n  throw new Error(\n    `Registrar día ${processDate}: el lote tiene ${sectorIds.size} ID(s) en Sector lote ` +\n    'pero Normalizar no devolvió message_id. Revisa Leer Gmail antes de Guardar resumen.'\n  );\n} else if (sector && sector.remainingAfter > 0) {\n  statusHint = 'partial';\n} else if (listedIds.length > 0 && batchProcessed.length < listedIds.length) {\n  statusHint = 'partial';\n} else if (listedIds.length > 0) {\n  statusHint = 'completed';\n}\n\nconst row = {\n  analyzed_date: processDate,\n  range_start: dayCtx.rangeStart || cfg.startDate,\n  range_end: dayCtx.rangeEnd || cfg.endDate,\n  gmail_query: qinfo.gmailQuery || '',\n  emails_listed_count: listedIds.length,\n  emails_processed_count: batchProcessed.length,\n  emails_match_count: batchMatch.length,\n  message_ids_listed: listedIds,\n  message_ids_processed: batchProcessed,\n  message_ids_match: batchMatch,\n  status: statusHint,\n  empty_day: emptyMarker && emptyReason === 'sin_correos_en_gmail',\n  empty_reason: emptyReason,\n  sector: sector || null\n};\n\nconst mergeProcSql = `\n  SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)\n  FROM (\n    SELECT jsonb_array_elements_text(COALESCE(email_history_day.message_ids_processed, '[]'::jsonb)) AS elem\n    UNION ALL\n    SELECT jsonb_array_elements_text(EXCLUDED.message_ids_processed) AS elem\n  ) u\n`.trim();\n\nconst mergeMatchSql = `\n  SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)\n  FROM (\n    SELECT jsonb_array_elements_text(COALESCE(email_history_day.message_ids_match, '[]'::jsonb)) AS elem\n    UNION ALL\n    SELECT jsonb_array_elements_text(EXCLUDED.message_ids_match) AS elem\n  ) u\n`.trim();\n\nconst upsertSql = `\nINSERT INTO email_history_day (\n  analyzed_date, range_start, range_end, gmail_query,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  message_ids_listed, message_ids_processed, message_ids_match,\n  status, analyzed_at\n) VALUES (\n  ${pgStr(row.analyzed_date)}::date,\n  ${pgStr(row.range_start)}::date,\n  ${pgStr(row.range_end)}::date,\n  ${pgStr(row.gmail_query)},\n  ${row.emails_listed_count},\n  ${row.emails_processed_count},\n  ${row.emails_match_count},\n  ${pgJson(row.message_ids_listed)},\n  ${pgJson(row.message_ids_processed)},\n  ${pgJson(row.message_ids_match)},\n  ${pgStr(row.status)},\n  now()\n)\nON CONFLICT (analyzed_date) DO UPDATE SET\n  range_start = EXCLUDED.range_start,\n  range_end = EXCLUDED.range_end,\n  gmail_query = EXCLUDED.gmail_query,\n  emails_listed_count = EXCLUDED.emails_listed_count,\n  message_ids_listed = EXCLUDED.message_ids_listed,\n  message_ids_processed = (${mergeProcSql}),\n  message_ids_match = (${mergeMatchSql}),\n  emails_processed_count = jsonb_array_length((${mergeProcSql})),\n  emails_match_count = jsonb_array_length((${mergeMatchSql})),\n  status = CASE\n    WHEN EXCLUDED.emails_listed_count = 0 THEN 'completed'\n    WHEN jsonb_array_length((${mergeProcSql})) >= EXCLUDED.emails_listed_count THEN 'completed'\n    ELSE 'partial'\n  END,\n  analyzed_at = now()\nRETURNING analyzed_date::text AS analyzed_date,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  status,\n  message_ids_processed, message_ids_match;\n`.trim();\n\nreturn [{ json: { ...row, upsertSql } }];\n"
       },
       "id": "node-reg-day",
       "name": "Registrar día histórico",
@@ -1164,7 +1211,7 @@
       "main": [
         [
           {
-            "node": "Registrar día histórico",
+            "node": "Pasar a registrar",
             "type": "main",
             "index": 0
           }
@@ -1172,11 +1219,6 @@
         [
           {
             "node": "Preparar trazabilidad",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Expandir adjuntos",
             "type": "main",
             "index": 0
           }
@@ -1194,11 +1236,40 @@
         ]
       ]
     },
+    "Guardar trazabilidad": {
+      "main": [
+        [
+          {
+            "node": "Expandir adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Expandir adjuntos": {
       "main": [
         [
           {
+            "node": "¿Hay adjuntos PDF?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay adjuntos PDF?": {
+      "main": [
+        [
+          {
             "node": "Guardar referencia adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pasar a registrar",
             "type": "main",
             "index": 0
           }
@@ -1209,14 +1280,14 @@
       "main": [
         [
           {
-            "node": "Registrar día histórico",
+            "node": "Pasar a registrar",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Guardar trazabilidad": {
+    "Pasar a registrar": {
       "main": [
         [
           {

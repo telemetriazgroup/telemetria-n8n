@@ -1,6 +1,5 @@
 // ── Registrar resumen del día histórico ─────────────────────────────────────
-// Consolida IDs y genera SQL upsert seguro para email_history_day.
-// Soporta sectores (lotes): status partial hasta completar todos los listados.
+// Consolida IDs del LOTE ACTUAL (Sector lote) y genera upsert en email_history_day.
 
 function safeAll(nodeName) {
   try { return $(nodeName).all() || []; } catch (e) { return []; }
@@ -28,10 +27,25 @@ function getCfg() {
   throw new Error('Ejecuta Configuración o Config histórico.');
 }
 
+function sectorMessageIds() {
+  const ids = new Set();
+  for (const item of safeAll('Sector lote')) {
+    if (item.json && item.json.id) ids.add(item.json.id);
+  }
+  if (!ids.size) {
+    for (const item of safeAll('Filtrar solo nuevos')) {
+      if (item.json && item.json.id) ids.add(item.json.id);
+    }
+  }
+  return ids;
+}
+
 const cfg = getCfg();
 const qinfoMain = safeFirstJson('Construir consulta Gmail') || {};
 const filtrarRow = safeFirstJson('Filtrar solo nuevos') || safeFirstJson('Sector lote') || {};
 const sectorRow = safeFirstJson('Sector lote') || {};
+const sectorIds = sectorMessageIds();
+
 const dayCtx =
   filtrarRow._dayCtx ||
   sectorRow._dayCtx ||
@@ -47,7 +61,6 @@ if (!processDate) {
   throw new Error('Registrar día histórico: falta processDate del día en curso.');
 }
 
-const listRespMain = safeFirstJson('Listar IDs Gmail') || {};
 const qinfo =
   (() => {
     try {
@@ -56,12 +69,13 @@ const qinfo =
     } catch (e) { /* optional */ }
     return qinfoMain;
   })();
+
 const listResp =
   (() => {
     try {
-      return $('Listar IDs Gmail').item?.json || listRespMain;
+      return $('Listar IDs Gmail').item?.json || safeFirstJson('Listar IDs Gmail') || {};
     } catch (e) {
-      return listRespMain;
+      return safeFirstJson('Listar IDs Gmail') || {};
     }
   })();
 
@@ -69,13 +83,17 @@ const listedIds = Array.isArray(listResp.messages)
   ? listResp.messages.map(m => m && m.id).filter(Boolean)
   : [];
 
+// Solo IDs del lote actual (evita mezclar vueltas anteriores del bucle n8n)
 const processedIds = safeAll('Normalizar correo')
-  .map(i => i.json.message_id)
-  .filter(Boolean);
+  .filter(i => i.json && i.json.message_id && sectorIds.has(i.json.message_id))
+  .map(i => i.json.message_id);
 
 const matchIds = safeAll('Filtrar recibidos relevantes')
-  .map(i => i.json.message_id)
-  .filter(Boolean);
+  .filter(i => {
+    const j = i.json || {};
+    return j.message_id && !j._cerrarDiaHistorico && sectorIds.has(j.message_id);
+  })
+  .map(i => i.json.message_id);
 
 const inputJson = $input.first()?.json || {};
 const emptyMarker = inputJson._empty === true || inputJson._historicalEmptyDay === true;
@@ -93,13 +111,18 @@ if (emptyMarker && emptyReason === 'sin_correos_en_gmail') {
   statusHint = 'completed';
 } else if (emptyMarker && emptyReason === 'todos_ya_en_bd') {
   batchProcessed = listedIds;
-  batchMatch = safeAll('Filtrar recibidos relevantes').map(i => i.json.message_id).filter(Boolean);
+  batchMatch = matchIds;
   statusHint = 'completed';
+} else if (sectorIds.size > 0 && batchProcessed.length === 0) {
+  throw new Error(
+    `Registrar día ${processDate}: el lote tiene ${sectorIds.size} ID(s) en Sector lote ` +
+    'pero Normalizar no devolvió message_id. Revisa Leer Gmail antes de Guardar resumen.'
+  );
 } else if (sector && sector.remainingAfter > 0) {
   statusHint = 'partial';
-} else if (listedIds.length > 0 && batchProcessed.length < listedIds.length && sector) {
-  statusHint = sector.sectorComplete ? 'completed' : 'partial';
-} else if (listedIds.length > 0 && batchProcessed.length >= listedIds.length) {
+} else if (listedIds.length > 0 && batchProcessed.length < listedIds.length) {
+  statusHint = 'partial';
+} else if (listedIds.length > 0) {
   statusHint = 'completed';
 }
 
@@ -176,7 +199,8 @@ ON CONFLICT (analyzed_date) DO UPDATE SET
   analyzed_at = now()
 RETURNING analyzed_date::text AS analyzed_date,
   emails_listed_count, emails_processed_count, emails_match_count,
-  status;
+  status,
+  message_ids_processed, message_ids_match;
 `.trim();
 
 return [{ json: { ...row, upsertSql } }];

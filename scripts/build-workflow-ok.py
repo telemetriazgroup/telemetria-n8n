@@ -210,6 +210,7 @@ nodes = [
     if_bool('node-if-has-id', '¿Hay correos nuevos?', [2120, 780],
             '={{ !!$json.id }}'),
     code_node('node-skip-empty', 'Omitir si vacío', [2240, 780], '06-skip-si-vacio.js'),
+    code_node('node-pass-reg', 'Pasar a registrar', [3560, 680], '06b-pasar-a-registrar.js'),
     {
         'parameters': {
             'resource': 'message', 'operation': 'get',
@@ -231,13 +232,15 @@ nodes = [
             'schema': {'__rl': True, 'mode': 'name', 'value': 'public'},
             'table': {'__rl': True, 'mode': 'name', 'value': 'email_trace'},
             'columns': {'mappingMode': 'autoMapInputData', 'value': {}, 'matchingColumns': ['message_id']},
-            'options': {'skipOnConflict': True},
+            'options': {'skipOnConflict': True, 'alwaysOutputData': True},
         },
         'id': 'node-insert-trace', 'name': 'Guardar trazabilidad',
         'type': 'n8n-nodes-base.postgres', 'typeVersion': 2.5,
         'position': [3340, 680], 'credentials': PG,
     },
-    code_node('node-expand', 'Expandir adjuntos', [3120, 880], '03-expandir-adjuntos.js'),
+    code_node('node-expand', 'Expandir adjuntos', [3340, 880], '03-expandir-adjuntos.js'),
+    if_bool('node-if-attach', '¿Hay adjuntos PDF?', [3560, 880],
+            '={{ !!($json.message_id && $json.filename) }}'),
     {
         'parameters': {
             'operation': 'insert',
@@ -245,7 +248,7 @@ nodes = [
             'table': {'__rl': True, 'mode': 'name', 'value': 'email_attachment_ref'},
             'columns': {'mappingMode': 'autoMapInputData', 'value': {},
                         'matchingColumns': ['message_id', 'attachment_id', 'filename']},
-            'options': {'skipOnConflict': True},
+            'options': {'skipOnConflict': True, 'alwaysOutputData': True},
         },
         'id': 'node-insert-attach', 'name': 'Guardar referencia adjuntos',
         'type': 'n8n-nodes-base.postgres', 'typeVersion': 2.5,
@@ -309,16 +312,18 @@ connections = {
     'Normalizar correo': {'main': [[{'node': 'Filtrar recibidos relevantes', 'type': 'main', 'index': 0}]]},
     'Filtrar recibidos relevantes': {'main': [[{'node': '¿Cerrar día sin matches?', 'type': 'main', 'index': 0}]]},
     '¿Cerrar día sin matches?': {'main': [
-        [{'node': 'Registrar día histórico', 'type': 'main', 'index': 0}],
-        [
-            {'node': 'Preparar trazabilidad', 'type': 'main', 'index': 0},
-            {'node': 'Expandir adjuntos', 'type': 'main', 'index': 0},
-        ],
+        [{'node': 'Pasar a registrar', 'type': 'main', 'index': 0}],
+        [{'node': 'Preparar trazabilidad', 'type': 'main', 'index': 0}],
     ]},
     'Preparar trazabilidad': {'main': [[{'node': 'Guardar trazabilidad', 'type': 'main', 'index': 0}]]},
-    'Expandir adjuntos': {'main': [[{'node': 'Guardar referencia adjuntos', 'type': 'main', 'index': 0}]]},
-    'Guardar referencia adjuntos': {'main': [[{'node': 'Registrar día histórico', 'type': 'main', 'index': 0}]]},
-    'Guardar trazabilidad': {'main': [[{'node': 'Registrar día histórico', 'type': 'main', 'index': 0}]]},
+    'Guardar trazabilidad': {'main': [[{'node': 'Expandir adjuntos', 'type': 'main', 'index': 0}]]},
+    'Expandir adjuntos': {'main': [[{'node': '¿Hay adjuntos PDF?', 'type': 'main', 'index': 0}]]},
+    '¿Hay adjuntos PDF?': {'main': [
+        [{'node': 'Guardar referencia adjuntos', 'type': 'main', 'index': 0}],
+        [{'node': 'Pasar a registrar', 'type': 'main', 'index': 0}],
+    ]},
+    'Guardar referencia adjuntos': {'main': [[{'node': 'Pasar a registrar', 'type': 'main', 'index': 0}]]},
+    'Pasar a registrar': {'main': [[{'node': 'Registrar día histórico', 'type': 'main', 'index': 0}]]},
     'Registrar día histórico': {'main': [[{'node': 'Guardar resumen día', 'type': 'main', 'index': 0}]]},
     'Guardar resumen día': {'main': [[{'node': 'Obtener días analizados', 'type': 'main', 'index': 0}]]},
 }
