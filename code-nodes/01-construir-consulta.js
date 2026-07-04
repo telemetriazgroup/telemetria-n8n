@@ -51,7 +51,11 @@ let beforeEpoch;
 let processDate = null;
 let slotIndex = null;
 
-if (mode === 'live_today') {
+if (mode === 'repair') {
+  processDate = String(cfg.processDate || dayItem.processDate || '').trim();
+  afterEpoch = epochFromYmd(processDate);
+  beforeEpoch = afterEpoch + 86400;
+} else if (mode === 'live_today') {
   processDate = String(cfg.processDate || dayItem.processDate || '').trim();
   slotIndex = Number(cfg.slotIndex ?? dayItem.slotIndex ?? 0);
   afterEpoch = Number(cfg.slotStartEpoch ?? dayItem.slotStartEpoch ?? 0);
@@ -135,23 +139,36 @@ WHERE trace_status = 'active'
   AND email_date >= to_timestamp(${afterEpoch}) AT TIME ZONE 'America/Lima'
   AND email_date < to_timestamp(${beforeEpoch}) AT TIME ZONE 'America/Lima'
 UNION
-SELECT jsonb_array_elements_text(message_ids_processed) AS message_id
-FROM email_history_slot
-WHERE analyzed_date = '${d}'::date AND slot_index = ${idx}
+SELECT proc.elem
+FROM email_history_slot slot,
+     jsonb_array_elements_text(COALESCE(slot.message_ids_processed, '[]'::jsonb)) proc(elem)
+WHERE slot.analyzed_date = '${d}'::date AND slot.slot_index = ${idx}
+  AND NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements_text(COALESCE(slot.message_ids_match, '[]'::jsonb)) m(elem)
+    WHERE m.elem = proc.elem
+  )
 `.trim();
 } else if (mode === 'historical') {
   const d = processDate.replace(/'/g, '');
-  // email_trace = solo matches; email_history_day.message_ids_processed = todos los leídos
   knownIdsQuery = `
 SELECT message_id FROM email_trace
 WHERE trace_status = 'active'
   AND review_mode = 'historical'
   AND (search_after::date = '${d}'::date OR email_date::date = '${d}'::date)
 UNION
-SELECT jsonb_array_elements_text(message_ids_processed) AS message_id
-FROM email_history_day
-WHERE analyzed_date = '${d}'::date
+SELECT proc.elem
+FROM email_history_day ehd,
+     jsonb_array_elements_text(COALESCE(ehd.message_ids_processed, '[]'::jsonb)) proc(elem)
+WHERE ehd.analyzed_date = '${d}'::date
+  AND NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements_text(COALESCE(ehd.message_ids_match, '[]'::jsonb)) m(elem)
+    WHERE m.elem = proc.elem
+  )
 `.trim();
+} else if (mode === 'repair') {
+  knownIdsQuery = `SELECT NULL::text AS message_id WHERE false`;
 } else if (mode === 'range') {
   const start = String(cfg.startDate).trim();
   const end = String(cfg.endDate).trim();
@@ -163,7 +180,7 @@ WHERE analyzed_date = '${d}'::date
 return [{
   json: {
     gmailQuery: q,
-    reviewMode: mode === 'live_today' ? 'incremental' : mode,
+    reviewMode: mode === 'live_today' ? 'incremental' : (mode === 'repair' ? 'historical' : mode),
     processDate,
     slotIndex,
     knownIdsQuery,

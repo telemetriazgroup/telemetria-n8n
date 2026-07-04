@@ -241,7 +241,7 @@ nodes = [
     code_node('node-normalize', 'Normalizar correo', [2680, 780], '02-normalizar.js'),
     code_node('node-filter-relevant', 'Filtrar recibidos relevantes', [2900, 780], '07-filtrar-recibidos-relevantes.js'),
     if_bool('node-if-close-day', '¿Cerrar día sin matches?', [3120, 780],
-            '={{ $json._cerrarDiaHistorico === true }}'),
+            '={{ $json._cerrarDiaHistorico === true || $json._continuarSinMatch === true }}'),
     if_node('node-if-live-mode', '¿Modo live?', [3680, 680],
             "={{ (() => { "
             "for (const n of ['Config live API','Config histórico API','Config histórico','Configuración']) { "
@@ -249,18 +249,7 @@ nodes = [
             "} return 'historical'; "
             "})() }}", 'live_today'),
     code_node('node-prepare-trace', 'Preparar trazabilidad', [3340, 680], '04-preparar-trace.js'),
-    {
-        'parameters': {
-            'operation': 'insert',
-            'schema': {'__rl': True, 'mode': 'name', 'value': 'public'},
-            'table': {'__rl': True, 'mode': 'name', 'value': 'email_trace'},
-            'columns': {'mappingMode': 'autoMapInputData', 'value': {}, 'matchingColumns': ['message_id']},
-            'options': {'skipOnConflict': True, 'alwaysOutputData': True},
-        },
-        'id': 'node-insert-trace', 'name': 'Guardar trazabilidad',
-        'type': 'n8n-nodes-base.postgres', 'typeVersion': 2.5,
-        'position': [3340, 680], 'credentials': PG,
-    },
+    pg_node('node-insert-trace', 'Guardar trazabilidad', [3560, 680], '={{ $json.upsertSql }}', always_out=True),
     code_node('node-expand', 'Expandir adjuntos', [3340, 880], '03-expandir-adjuntos.js'),
     if_bool('node-if-attach', '¿Hay adjuntos PDF?', [3560, 880],
             '={{ !!($json.message_id && $json.filename) }}'),

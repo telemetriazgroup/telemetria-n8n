@@ -543,7 +543,8 @@ export default function App({ page }: { page: Page }) {
       <section>
         <h1>Correos con match</h1>
         <p className="muted">
-          Por defecto se muestran los <strong>últimos 20</strong> correos con match.
+          Por defecto se muestran los <strong>últimos 20</strong> correos con match
+          (histórico + hoy en vivo).
           Pulsa <strong>Ver contenido</strong> para leer el cuerpo completo.
         </p>
         <div className="card card-secondary trace-filters">

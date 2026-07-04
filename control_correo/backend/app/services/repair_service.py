@@ -56,7 +56,6 @@ def audit_day_gaps(db: Session, day: date) -> dict:
                 """
                 SELECT message_id FROM email_trace
                 WHERE trace_status = 'active'
-                  AND review_mode = 'historical'
                   AND message_id = ANY(:ids)
                 """
             ),

@@ -226,14 +226,24 @@ for (const item of $input.all()) {
 const mode = String(cfg.mode || '').toLowerCase();
 const inputCount = $input.all().length;
 
-// Histórico: correos leídos pero ningún match → cerrar día igual (cierra loop Split)
-if (!out.length && mode === 'historical' && inputCount > 0) {
-  return [{
-    json: {
-      _cerrarDiaHistorico: true,
-      emailsProcessed: inputCount
-    }
-  }];
+// Histórico / live: lote leído sin match → seguir a registrar (no insertar trace)
+if (!out.length && inputCount > 0) {
+  if (mode === 'historical') {
+    return [{
+      json: {
+        _cerrarDiaHistorico: true,
+        emailsProcessed: inputCount
+      }
+    }];
+  }
+  if (mode === 'live_today') {
+    return [{
+      json: {
+        _continuarSinMatch: true,
+        emailsProcessed: inputCount
+      }
+    }];
+  }
 }
 
 return out;

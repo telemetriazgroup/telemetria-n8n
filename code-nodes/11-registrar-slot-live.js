@@ -61,7 +61,7 @@ const processedIds = safeAll('Normalizar correo')
 const matchIds = safeAll('Filtrar recibidos relevantes')
   .filter(i => {
     const j = i.json || {};
-    return j.message_id && !j._cerrarDiaHistorico && sectorIds.has(j.message_id);
+    return j.message_id && !j._cerrarDiaHistorico && !j._continuarSinMatch && sectorIds.has(j.message_id);
   })
   .map(i => i.json.message_id);
 

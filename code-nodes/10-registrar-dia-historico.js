@@ -92,6 +92,7 @@ const matchIds = safeAll('Filtrar recibidos relevantes')
   .filter(i => {
     const j = i.json || {};
     if (j._cerrarDiaHistorico) return false;
+    if (j._continuarSinMatch) return false;
     const mid = j.message_id || j.id;
     return mid && sectorIds.has(mid);
   })

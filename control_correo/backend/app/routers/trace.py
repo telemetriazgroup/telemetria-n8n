@@ -19,11 +19,17 @@ def list_trace(
     date_to: Optional[date] = Query(None, alias="to"),
     datetime_from: Optional[datetime] = Query(None, alias="from_dt"),
     datetime_to: Optional[datetime] = Query(None, alias="to_dt"),
+    review_mode: Optional[str] = Query(None, description="historical, incremental o vacío=todos"),
     db: Session = Depends(get_db),
 ) -> list[TraceOut]:
     offset = (page - 1) * page_size
-    clauses = ["trace_status = 'active'", "review_mode = 'historical'"]
+    clauses = ["trace_status = 'active'"]
     params: dict = {"limit": page_size, "offset": offset}
+    if review_mode:
+        clauses.append("review_mode = :review_mode")
+        params["review_mode"] = review_mode
+    else:
+        clauses.append("review_mode IN ('historical', 'incremental')")
     if datetime_from:
         clauses.append("email_date >= :dt_from")
         params["dt_from"] = datetime_from
