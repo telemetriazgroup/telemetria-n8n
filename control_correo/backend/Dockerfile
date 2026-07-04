@@ -12,6 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN mkdir -p /app/migrations
 COPY migrations/06-control-correo.sql /app/migrations/06-control-correo.sql
 COPY migrations/07-control-correo-range-2025.sql /app/migrations/07-control-correo-range-2025.sql
+COPY migrations/08-control-correo-run-actions.sql /app/migrations/08-control-correo-run-actions.sql
+COPY migrations/09-email-history-slot.sql /app/migrations/09-email-history-slot.sql
 
 COPY app ./app
 
