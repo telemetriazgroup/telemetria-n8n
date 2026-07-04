@@ -118,7 +118,9 @@ def count_scheduled_days(db: Session) -> int:
         text(
             """
             WITH days AS (
-                SELECT generate_series(:start::date, :end::date, '1 day'::interval)::date AS d
+                SELECT generate_series(
+                    CAST(:start AS date), CAST(:end AS date), '1 day'::interval
+                )::date AS d
             )
             SELECT COUNT(*)::int
             FROM days

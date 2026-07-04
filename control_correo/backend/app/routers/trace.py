@@ -34,7 +34,7 @@ def list_trace(
         clauses.append("email_date <= :dt_to")
         params["dt_to"] = datetime_to
     elif date_to:
-        clauses.append("email_date < (:dt::date + INTERVAL '1 day')")
+        clauses.append("email_date < (CAST(:dt AS date) + INTERVAL '1 day')")
         params["dt"] = date_to
     where = " AND ".join(clauses)
     rows = db.execute(
