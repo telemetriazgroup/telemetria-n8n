@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import TraceDetailModal from "./TraceDetailModal";
+import { renderCompactMatchPreview, renderSubjectWithMatch } from "./matchHighlight";
 import {
   Dashboard,
   HistoryDay,
@@ -513,6 +514,7 @@ export default function App({ page }: { page: Page }) {
               <tr>
                 <th>Fecha / hora</th>
                 <th>Asunto</th>
+                <th>Fragmento match</th>
                 <th>De</th>
                 <th>Telemetría</th>
                 <th>Persona</th>
@@ -523,7 +525,22 @@ export default function App({ page }: { page: Page }) {
               {traces.map((t) => (
                 <tr key={t.message_id}>
                   <td>{formatDateTime(t.email_date)}</td>
-                  <td>{t.subject ?? "—"}</td>
+                  <td className="match-cell">
+                    {renderSubjectWithMatch(t.subject, {
+                      telemetriaKeyword: t.match_telemetria_keyword,
+                      personKeyword: t.match_person_keyword,
+                      telemetriaExcerpt: t.match_telemetria_excerpt,
+                      personExcerpt: t.match_person_excerpt,
+                    })}
+                  </td>
+                  <td className="match-cell match-cell-preview">
+                    {renderCompactMatchPreview({
+                      telemetriaKeyword: t.match_telemetria_keyword,
+                      personKeyword: t.match_person_keyword,
+                      telemetriaExcerpt: t.match_telemetria_excerpt,
+                      personExcerpt: t.match_person_excerpt,
+                    })}
+                  </td>
                   <td>{t.from_address ?? "—"}</td>
                   <td>{t.match_telemetria_keyword ?? "—"}</td>
                   <td>{t.match_person_keyword ?? "—"}</td>

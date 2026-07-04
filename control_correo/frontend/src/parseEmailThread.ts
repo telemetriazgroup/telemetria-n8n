@@ -1,6 +1,7 @@
 /**
- * Parsea body_text con mensajes apilados (Gmail / Outlook en español e inglés).
- * Pensado para hilos donde Normalizar dejó todo en una sola cadena o con saltos.
+ * Parsea body_text apilado (Gmail / Outlook ES-EN) en mensajes independientes.
+ * Cada mensaje expone solo su contenido nuevo; las citas anidadas se eliminan
+ * o se convierten en mensajes del hilo (estilo Gmail).
  */
 
 export type ThreadMessage = {
@@ -11,16 +12,31 @@ export type ThreadMessage = {
   date: string | null;
   subject: string | null;
   headerLine: string | null;
+  /** Texto útil del mensaje (sin citas posteriores). */
   body: string;
+  /** Primera línea resumida para filas colapsadas. */
+  preview: string;
 };
 
 export type ParsedThread = {
+  /** Orden cronológico: índice 0 = más antiguo, último = más reciente. */
   messages: ThreadMessage[];
   isThread: boolean;
 };
 
-const THREAD_SPLIT =
-  /(?=(?:^|\n)\s*(?:El .+? escribió:|On .+? wrote:|----- ?Original Message ?-----|----- ?Mensaje original ?-----|_{5,}))/gim;
+const GMAIL_ES =
+  /(?:^|\n)\s*(El .+? escribió:)\s*/gi;
+const GMAIL_EN =
+  /(?:^|\n)\s*(On .+? wrote:)\s*/gi;
+const SEP_ORIGINAL =
+  /(?:^|\n)\s*(----- ?Original Message ?-----)\s*/gi;
+const SEP_MENSAJE =
+  /(?:^|\n)\s*(----- ?Mensaje original ?-----)\s*/gi;
+const OUTLOOK_BLOCK =
+  /(?:^|\n)\s*(De:\s*(?:[^\n<]*<[^>]+@[^>]+>|[^\s\n]+@[^\s\n]+)\s*\n\s*(?:Enviado(?: el)?|Sent):\s*[^\n]*)/gi;
+const OUTLOOK_BLOCK_EN =
+  /(?:^|\n)\s*(From:\s*(?:[^\n<]*<[^>]+@[^>]+>|[^\s\n]+@[^\s\n]+)\s*\n\s*(?:Sent|Date):\s*[^\n]*)/gi;
+const RULE_LINE = /(?:^|\n)\s*_{5,}\s*(?:\n|$)/g;
 
 const GMAIL_HEADER =
   /^(?:El .+?,\s*)?(.+?)\s*(?:<([^>]+@[^>]+)>|([^\s]+@[^\s]+))?\s*escribió:?$/i;
@@ -29,8 +45,19 @@ const GMAIL_HEADER_EN =
 
 const OUTLOOK_FROM = /^De:\s*(.+)$/im;
 const OUTLOOK_FROM_EN = /^From:\s*(.+)$/im;
-const OUTLOOK_SENT = /^(?:Enviado|Sent):\s*(.+)$/im;
+const OUTLOOK_SENT = /^(?:Enviado(?: el)?|Sent|Date):\s*(.+)$/im;
 const OUTLOOK_SUBJECT = /^(?:Asunto|Subject):\s*(.+)$/im;
+
+const NESTED_QUOTE_PATTERNS: RegExp[] = [
+  /\n\s*El .+? escribió:\s*/i,
+  /\n\s*On .+? wrote:\s*/i,
+  /\n\s*----- ?Original Message ?-----\s*/i,
+  /\n\s*----- ?Mensaje original ?-----\s*/i,
+  /\n\s*De:\s*(?:[^\n<]*<[^>]+@[^>]+>|[^\s\n]+@[^\s\n]+)\s*\n\s*(?:Enviado(?: el)?|Sent):\s*/i,
+  /\n\s*From:\s*(?:[^\n<]*<[^>]+@[^>]+>|[^\s\n]+@[^\s\n]+)\s*\n\s*(?:Sent|Date):\s*/i,
+  /\n\s*_{5,}\s*\n/,
+  /\n\s*\[(?:Mensaje recortado|Message clipped)[^\]]*\]/i,
+];
 
 function normalizeText(text: string): string {
   return String(text || "")
@@ -45,13 +72,15 @@ function normalizeText(text: string): string {
 export function expandCollapsedBody(text: string): string {
   let t = normalizeText(text);
   const lineCount = t.split("\n").length;
-  if (lineCount >= 4) return t;
+  if (lineCount >= 6) return t;
 
   const insertBreaks: RegExp[] = [
-    /\s+(El [^\n]{8,240}? escribió:)/gi,
-    /\s+(On [^\n]{8,240}? wrote:)/gi,
+    /\s+(El [^\n]{8,280}? escribió:)/gi,
+    /\s+(On [^\n]{8,280}? wrote:)/gi,
     /\s+(----- ?Original Message ?-----)/gi,
     /\s+(----- ?Mensaje original ?-----)/gi,
+    /\s+(De:\s+(?:[^\n<]*<[^>]+@[^>]+>|[^\s\n]+@[^\s\n]+)\s+Enviado(?: el)?:)/gi,
+    /\s+(From:\s+(?:[^\n<]*<[^>]+@[^>]+>|[^\s\n]+@[^\s\n]+)\s+Sent:)/gi,
     /\s+(De:\s+[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/gi,
     /\s+(From:\s+[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/gi,
   ];
@@ -65,9 +94,19 @@ export function expandCollapsedBody(text: string): string {
 function parseEmailFromHeaderLine(line: string): { name: string | null; email: string | null } {
   const trimmed = line.trim();
   const angle = trimmed.match(/^(.+?)\s*<([^>]+)>$/);
-  if (angle) return { name: angle[1].replace(/^["']|["']$/g, "").trim(), email: angle[2].trim() };
+  if (angle) {
+    return {
+      name: angle[1].replace(/^["']|["']$/g, "").trim(),
+      email: angle[2].trim(),
+    };
+  }
   const emailOnly = trimmed.match(/([^\s<>]+@[^\s<>]+)/);
-  if (emailOnly) return { name: trimmed.replace(emailOnly[0], "").replace(/^["'\s]+|["'\s]+$/g, "") || null, email: emailOnly[1] };
+  if (emailOnly) {
+    return {
+      name: trimmed.replace(emailOnly[0], "").replace(/^["'\s]+|["'\s]+$/g, "") || null,
+      email: emailOnly[1],
+    };
+  }
   return { name: trimmed || null, email: null };
 }
 
@@ -96,46 +135,45 @@ function stripOutlookHeaderBlock(body: string): {
   let fromLine: string | null = null;
   let sent: string | null = null;
   let subject: string | null = null;
-  let headerLines = 0;
+  let headerEnd = 0;
+  let inHeader = false;
 
-  for (let i = 0; i < Math.min(lines.length, 12); i++) {
+  for (let i = 0; i < Math.min(lines.length, 14); i++) {
     const line = lines[i].trim();
     if (!line) {
-      if (headerLines > 0) {
-        headerLines++;
-        continue;
-      }
+      if (inHeader) headerEnd = i + 1;
       continue;
     }
     const de = line.match(OUTLOOK_FROM) || line.match(OUTLOOK_FROM_EN);
     if (de) {
       fromLine = de[1].trim();
-      headerLines = i + 1;
+      inHeader = true;
+      headerEnd = i + 1;
       continue;
     }
     const sentM = line.match(OUTLOOK_SENT);
-    if (sentM && headerLines > 0) {
+    if (sentM && inHeader) {
       sent = sentM[1].trim();
-      headerLines = i + 1;
+      headerEnd = i + 1;
       continue;
     }
     const subM = line.match(OUTLOOK_SUBJECT);
-    if (subM && headerLines > 0) {
+    if (subM && inHeader) {
       subject = subM[1].trim();
-      headerLines = i + 1;
+      headerEnd = i + 1;
       continue;
     }
-    if (/^(?:Para|To|Cc|CC|Asunto|Subject):/i.test(line) && headerLines > 0) {
-      headerLines = i + 1;
+    if (/^(?:Para|To|Cc|CC|Asunto|Subject):/i.test(line) && inHeader) {
+      headerEnd = i + 1;
       continue;
     }
-    if (headerLines > 0) break;
+    if (inHeader) break;
   }
 
   if (!fromLine) return { meta: {}, body };
 
   const { name, email } = parseEmailFromHeaderLine(fromLine);
-  const rest = lines.slice(headerLines).join("\n").trim();
+  const rest = lines.slice(headerEnd).join("\n").trim();
   return {
     meta: {
       sender: name,
@@ -148,11 +186,64 @@ function stripOutlookHeaderBlock(body: string): {
   };
 }
 
+/** Elimina citas anidadas dentro de un mismo bloque (contenido ya extraído en otro mensaje). */
+export function stripNestedQuotes(body: string): string {
+  let cutAt = body.length;
+  for (const re of NESTED_QUOTE_PATTERNS) {
+    const m = body.match(re);
+    if (m && m.index !== undefined && m.index > 0 && m.index < cutAt) {
+      cutAt = m.index;
+    }
+  }
+  let trimmed = body.slice(0, cutAt).trim();
+  trimmed = trimmed.replace(/^>+\s?/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+  return trimmed;
+}
+
+function makePreview(body: string, maxLen = 160): string {
+  const flat = body.replace(/\s+/g, " ").trim();
+  if (!flat) return "(sin texto)";
+  if (flat.length <= maxLen) return flat;
+  return `${flat.slice(0, maxLen - 1)}…`;
+}
+
 function cleanMessageBody(body: string): string {
-  return body
-    .replace(/^>+\s?/gm, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return stripNestedQuotes(body) || "(sin texto)";
+}
+
+type DelimiterHit = { index: number; raw: string };
+
+function findDelimiterHits(text: string): DelimiterHit[] {
+  const hits: DelimiterHit[] = [];
+  const scanners: RegExp[] = [
+    GMAIL_ES,
+    GMAIL_EN,
+    SEP_ORIGINAL,
+    SEP_MENSAJE,
+    OUTLOOK_BLOCK,
+    OUTLOOK_BLOCK_EN,
+    RULE_LINE,
+  ];
+
+  for (const re of scanners) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const raw = (m[1] || m[0]).trim();
+      const index = m.index + (m[0].length - raw.length);
+      hits.push({ index, raw });
+    }
+  }
+
+  hits.sort((a, b) => a.index - b.index);
+
+  const deduped: DelimiterHit[] = [];
+  for (const hit of hits) {
+    const prev = deduped[deduped.length - 1];
+    if (prev && hit.index <= prev.index + 8) continue;
+    deduped.push(hit);
+  }
+  return deduped;
 }
 
 function parseBlock(
@@ -189,6 +280,8 @@ function parseBlock(
     meta.senderEmail = parsed.email;
   }
 
+  const body = cleanMessageBody(block);
+
   return {
     index,
     depth: index,
@@ -197,32 +290,37 @@ function parseBlock(
     date: meta.date ?? null,
     subject: meta.subject ?? null,
     headerLine: meta.headerLine ?? headerLine,
-    body: cleanMessageBody(block) || "(sin texto)",
+    body,
+    preview: makePreview(body),
   };
 }
 
 /**
- * Divide body_text en mensajes sucesivos del hilo (más reciente primero).
+ * Divide body_text en mensajes del hilo (orden cronológico: antiguo → reciente).
  */
 export function parseEmailThread(
   bodyText: string | null | undefined,
-  options?: { fromAddress?: string | null; subject?: string | null }
+  options?: { fromAddress?: string | null; subject?: string | null; emailDate?: string | null }
 ): ParsedThread {
   const raw = bodyText?.trim();
   if (!raw) {
+    const body = "(sin cuerpo)";
     return {
       messages: [
         {
           index: 0,
           depth: 0,
-          sender: options?.fromAddress ? parseEmailFromHeaderLine(options.fromAddress).name : null,
+          sender: options?.fromAddress
+            ? parseEmailFromHeaderLine(options.fromAddress).name
+            : null,
           senderEmail: options?.fromAddress
             ? parseEmailFromHeaderLine(options.fromAddress).email
             : null,
-          date: null,
+          date: options?.emailDate ?? null,
           subject: options?.subject ?? null,
           headerLine: null,
-          body: "(sin cuerpo)",
+          body,
+          preview: makePreview(body),
         },
       ],
       isThread: false,
@@ -230,23 +328,53 @@ export function parseEmailThread(
   }
 
   const expanded = expandCollapsedBody(raw);
-  const parts = expanded
-    .split(THREAD_SPLIT)
-    .map((p) => p.trim())
-    .filter(Boolean);
+  const hits = findDelimiterHits(expanded);
 
-  if (parts.length <= 1) {
+  if (hits.length === 0) {
     const single = parseBlock(expanded, 0, options?.fromAddress);
     if (options?.subject && !single.subject) single.subject = options.subject;
+    if (options?.emailDate && !single.date) single.date = options.emailDate;
     return { messages: [single], isThread: false };
   }
 
-  const messages = parts.map((part, i) => parseBlock(part, i, i === 0 ? options?.fromAddress : null));
-  if (messages[0] && options?.subject && !messages[0].subject) {
-    messages[0].subject = options.subject;
+  const newestFirst: ThreadMessage[] = [];
+  let cursor = 0;
+
+  for (let i = 0; i < hits.length; i++) {
+    const hit = hits[i];
+    const segment = expanded.slice(cursor, hit.index).trim();
+    if (segment) {
+      newestFirst.push(parseBlock(segment, newestFirst.length, newestFirst.length === 0 ? options?.fromAddress : null));
+    }
+    cursor = hit.index;
   }
 
-  return { messages, isThread: messages.length > 1 };
+  const tail = expanded.slice(cursor).trim();
+  if (tail) {
+    newestFirst.push(parseBlock(tail, newestFirst.length, null));
+  }
+
+  if (newestFirst.length === 0) {
+    const single = parseBlock(expanded, 0, options?.fromAddress);
+    return { messages: [single], isThread: false };
+  }
+
+  const latest = newestFirst[0];
+  if (options?.subject && !latest.subject) latest.subject = options.subject;
+  if (options?.emailDate && !latest.date) latest.date = options.emailDate;
+  if (!latest.sender && options?.fromAddress) {
+    const parsed = parseEmailFromHeaderLine(options.fromAddress);
+    latest.sender = parsed.name;
+    latest.senderEmail = parsed.email;
+  }
+
+  const chronological = [...newestFirst].reverse().map((msg, i) => ({
+    ...msg,
+    index: i,
+    depth: i,
+  }));
+
+  return { messages: chronological, isThread: chronological.length > 1 };
 }
 
 export function senderLabel(msg: ThreadMessage): string {
@@ -255,4 +383,10 @@ export function senderLabel(msg: ThreadMessage): string {
   if (msg.senderEmail) return msg.senderEmail;
   if (msg.headerLine) return msg.headerLine;
   return "Remitente desconocido";
+}
+
+export function senderInitial(msg: ThreadMessage): string {
+  const src = (msg.sender || msg.senderEmail || "?").trim();
+  const ch = src.charAt(0).toUpperCase();
+  return /[A-Z0-9ÁÉÍÓÚÑ]/i.test(ch) ? ch : "?";
 }

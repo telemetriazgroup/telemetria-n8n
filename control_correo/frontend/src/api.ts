@@ -85,6 +85,9 @@ export type TraceRow = {
   email_date: string | null;
   match_telemetria_keyword: string | null;
   match_person_keyword: string | null;
+  match_telemetria_excerpt?: string | null;
+  match_person_excerpt?: string | null;
+  snippet?: string | null;
   gmail_link: string | null;
   reviewed_at?: string | null;
 };

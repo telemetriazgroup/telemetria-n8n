@@ -8,10 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas import TraceDetailOut, TraceOut
 
-router = APIRouter(prefix="/api/v1/trace", tags=["trace"])
-
-
-@router.get("", response_model=list[TraceOut])
+router = APIRouter(prefix="/api/v1/trace", tags=["trace"])@router.get("", response_model=list[TraceOut])
 def list_trace(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
@@ -42,7 +39,8 @@ def list_trace(
             f"""
             SELECT message_id, thread_id, subject, from_address, email_date,
                    match_telemetria_keyword, match_person_keyword,
-                   gmail_link, reviewed_at
+                   match_telemetria_excerpt, match_person_excerpt,
+                   snippet, gmail_link, reviewed_at
             FROM email_trace
             WHERE {where}
             ORDER BY email_date DESC NULLS LAST, reviewed_at DESC

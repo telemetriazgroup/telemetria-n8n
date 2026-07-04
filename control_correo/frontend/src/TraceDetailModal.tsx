@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import EmailThreadView from "./EmailThreadView";
+import { renderTextWithMatchHighlights } from "./matchHighlight";
 import { TraceDetail, fetchJson } from "./api";
 
 type Props = {
@@ -68,13 +69,27 @@ export default function TraceDetailModal({ messageId, onClose }: Props) {
                 {detail.match_telemetria_excerpt && (
                   <div>
                     <h3>Extracto telemetría</h3>
-                    <pre className="excerpt">{detail.match_telemetria_excerpt}</pre>
+                    <pre className="excerpt">
+                      {renderTextWithMatchHighlights(detail.match_telemetria_excerpt, {
+                        telemetriaKeyword: detail.match_telemetria_keyword,
+                        personKeyword: detail.match_person_keyword,
+                        telemetriaExcerpt: detail.match_telemetria_excerpt,
+                        personExcerpt: detail.match_person_excerpt,
+                      })}
+                    </pre>
                   </div>
                 )}
                 {detail.match_person_excerpt && (
                   <div>
                     <h3>Extracto persona</h3>
-                    <pre className="excerpt">{detail.match_person_excerpt}</pre>
+                    <pre className="excerpt">
+                      {renderTextWithMatchHighlights(detail.match_person_excerpt, {
+                        telemetriaKeyword: detail.match_telemetria_keyword,
+                        personKeyword: detail.match_person_keyword,
+                        telemetriaExcerpt: detail.match_telemetria_excerpt,
+                        personExcerpt: detail.match_person_excerpt,
+                      })}
+                    </pre>
                   </div>
                 )}
               </section>
@@ -82,13 +97,13 @@ export default function TraceDetailModal({ messageId, onClose }: Props) {
 
             <section>
               <div className="section-head">
-                <h3>Hilo de correo</h3>
+                <h3>Conversación</h3>
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
                   onClick={() => setViewRaw((v) => !v)}
                 >
-                  {viewRaw ? "Ver hilo estructurado" : "Ver texto plano"}
+                  {viewRaw ? "Ver conversación" : "Ver texto plano"}
                 </button>
               </div>
               {viewRaw ? (
@@ -101,8 +116,11 @@ export default function TraceDetailModal({ messageId, onClose }: Props) {
                   snippet={detail.snippet}
                   fromAddress={detail.from_address}
                   subject={detail.subject}
-                  matchTelemetriaExcerpt={detail.match_telemetria_excerpt}
-                  matchPersonExcerpt={detail.match_person_excerpt}
+                  emailDate={detail.email_date}
+                  telemetriaKeyword={detail.match_telemetria_keyword}
+                  personKeyword={detail.match_person_keyword}
+                  telemetriaExcerpt={detail.match_telemetria_excerpt}
+                  personExcerpt={detail.match_person_excerpt}
                 />
               )}
             </section>

@@ -75,6 +75,9 @@ class TraceOut(BaseModel):
     email_date: Optional[datetime]
     match_telemetria_keyword: Optional[str]
     match_person_keyword: Optional[str]
+    match_telemetria_excerpt: Optional[str] = None
+    match_person_excerpt: Optional[str] = None
+    snippet: Optional[str] = None
     gmail_link: Optional[str]
     reviewed_at: Optional[datetime] = None
 

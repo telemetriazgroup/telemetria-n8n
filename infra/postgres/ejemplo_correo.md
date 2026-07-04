@@ -1,14 +1,22 @@
 # Ejemplo de body_text apilado (hilos Gmail / Outlook)
 
-Referencia para `parseEmailThread.ts` en el frontend de **Correos match → Ver contenido**.
+Referencia para `parseEmailThread.ts` — **Correos match → Ver contenido → Conversación**.
 
-## Patrones que detecta el parser
+## Comportamiento esperado (estilo Gmail)
+
+1. Cada mensaje muestra **solo su texto nuevo** (sin citas repetidas).
+2. Orden **cronológico**: mensajes antiguos arriba colapsados con vista previa.
+3. El **más reciente** abajo, expandido por defecto.
+4. Las citas anidadas (`De:` / `Enviado el:` / `escribió:`) se separan o eliminan del cuerpo.
+
+## Patrones detectados
 
 | Formato | Ejemplo |
 |---------|---------|
 | Gmail ES | `El lun, 1 abr 2025, 10:30, Juan Pérez <juan@zgroup.com.pe> escribió:` |
 | Gmail EN | `On Mon, Apr 1, 2025 at 10:30 AM John <john@example.com> wrote:` |
-| Outlook | Bloque `De:` / `Enviado:` / `Para:` / `Asunto:` |
+| Outlook ES | `De: Name <email@dominio>` + `Enviado el: …` |
+| Outlook EN | `From: Name <email>` + `Sent: …` |
 | Separador | `-----Original Message-----` / `-----Mensaje original-----` |
 
 ## Texto de ejemplo (3 mensajes)
@@ -30,18 +38,9 @@ Asunto: Falla telemetria unidad 402
 Reportamos sin señal GPS en la unidad 402 desde las 06:00.
 ```
 
-## Uso en código
+Resultado: 3 tarjetas — #1 colapsada (Cliente Minero), #2 colapsada (Luis), #3 expandida (María).
 
-```typescript
-import { parseEmailThread } from "./parseEmailThread";
+## Outlook dentro del mensaje más reciente
 
-const { messages, isThread } = parseEmailThread(body_text, {
-  fromAddress: from_address,
-  subject: subject,
-});
-// messages[0] = más reciente; messages[n] = citas anteriores
-```
-
-## Nota
-
-Si `body_text` llega en **una sola línea** (por normalización n8n), `expandCollapsedBody()` inserta saltos antes de los marcadores antes de partir el hilo.
+Si el cuerpo del último correo incluye bloques `De:` / `Enviado el:` sin haber sido partidos,
+`stripNestedQuotes()` corta ahí para no mezclar hilos en la tarjeta «Más reciente».

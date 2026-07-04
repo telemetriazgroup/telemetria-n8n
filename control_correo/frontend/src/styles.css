@@ -262,6 +262,12 @@ td {
   font-size: 0.85rem;
 }
 
+.thread-gmail.thread-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
 .thread-flow {
   display: flex;
   flex-direction: column;
@@ -281,16 +287,19 @@ td {
 }
 
 .thread-msg-quoted {
-  margin-left: 0.75rem;
-  border-left: 3px solid #2d3748;
+  opacity: 0.95;
+}
+
+.thread-msg-collapsed .thread-msg-header {
+  padding: 0.55rem 0.75rem;
 }
 
 .thread-msg-header {
   width: 100%;
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  gap: 0.5rem 0.75rem;
-  align-items: center;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.65rem;
+  align-items: start;
   padding: 0.65rem 0.85rem;
   background: #1a2332;
   border: none;
@@ -298,6 +307,48 @@ td {
   text-align: left;
   cursor: pointer;
   font: inherit;
+}
+
+.thread-msg-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: #3d4f6f;
+  color: #e8eaed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.thread-msg-latest .thread-msg-avatar {
+  background: #2d6a3e;
+}
+
+.thread-msg-head-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.thread-msg-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+}
+
+.thread-msg-preview {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .thread-msg-header:hover {
@@ -310,6 +361,12 @@ td {
   letter-spacing: 0.03em;
   color: #6cb6ff;
   white-space: nowrap;
+}
+
+.thread-msg-badge-inline {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  color: #3fb950;
 }
 
 .thread-msg-latest .thread-msg-badge {
@@ -355,8 +412,12 @@ td {
   margin: 0;
   font-size: 0.85rem;
   line-height: 1.5;
-  max-height: 320px;
+  max-height: 280px;
   overflow: auto;
+}
+
+.thread-msg-latest.thread-msg-open .thread-msg-text {
+  max-height: min(70vh, 720px);
 }
 
 .thread-highlight {
@@ -364,6 +425,89 @@ td {
   color: inherit;
   padding: 0 2px;
   border-radius: 2px;
+}
+
+.match-line-plain {
+  display: block;
+}
+
+.match-line {
+  display: block;
+  margin: 0 -0.85rem;
+  padding: 0.15rem 0.85rem;
+  border-left: 3px solid transparent;
+  border-radius: 0 4px 4px 0;
+}
+
+.match-line-telemetria {
+  background: rgba(210, 153, 34, 0.14);
+  border-left-color: rgba(210, 153, 34, 0.75);
+}
+
+.match-line-person {
+  background: rgba(88, 166, 255, 0.12);
+  border-left-color: rgba(88, 166, 255, 0.75);
+}
+
+.match-line-both {
+  background: linear-gradient(
+    90deg,
+    rgba(210, 153, 34, 0.14) 0%,
+    rgba(88, 166, 255, 0.12) 100%
+  );
+  border-left-color: rgba(163, 190, 140, 0.85);
+}
+
+.match-mark {
+  padding: 0 2px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+
+.match-mark-telemetria {
+  background: rgba(210, 153, 34, 0.45);
+}
+
+.match-mark-person {
+  background: rgba(88, 166, 255, 0.4);
+}
+
+.thread-msg-has-match {
+  border-color: rgba(210, 153, 34, 0.55);
+}
+
+.thread-msg-match-tag,
+.thread-msg-badge-match {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #d29922;
+  background: rgba(210, 153, 34, 0.15);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.match-cell {
+  max-width: 280px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.match-cell-preview {
+  max-width: 320px;
+  color: #c9d1d9;
+}
+
+.match-cell .match-line {
+  margin: 0;
+  padding: 0.1rem 0.35rem;
+}
+
+.excerpt .match-line {
+  margin: 0;
+  padding: 0.1rem 0;
 }
 
 .thread-excerpts {
