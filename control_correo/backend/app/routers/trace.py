@@ -8,7 +8,10 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas import TraceDetailOut, TraceOut
 
-router = APIRouter(prefix="/api/v1/trace", tags=["trace"])@router.get("", response_model=list[TraceOut])
+router = APIRouter(prefix="/api/v1/trace", tags=["trace"])
+
+
+@router.get("", response_model=list[TraceOut])
 def list_trace(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
