@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import (
     count_completed,
     ensure_schedule_months,
@@ -152,10 +153,10 @@ def resume(db: Session = Depends(get_db)) -> dict:
 @router.post("/trigger")
 def trigger_manual(body: TriggerRequest, db: Session = Depends(get_db)) -> dict:
     state = get_or_create_state(db)
-    if not state.paused:
+    if settings.historical_auto_sync_enabled and not state.paused:
         raise HTTPException(
             400,
-            "Pausa la sincronización automática antes de elegir fechas manuales",
+            "Pausa el barrido automático histórico antes de lanzar fechas manuales",
         )
 
     active = get_active_running_run(db)
@@ -249,7 +250,7 @@ def reconcile_runs(db: Session = Depends(get_db)) -> dict:
     fixed = reconcile_orphan_runs(db)
     result = evaluate_active_run(db, state)
     launched = False
-    if not state.paused:
+    if not state.paused and settings.historical_auto_sync_enabled:
         if result == "completed":
             launched = try_launch_next(db, state) is not None
         elif result == "timeout":

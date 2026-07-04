@@ -140,8 +140,10 @@ export default function App({ page }: { page: Page }) {
             <p>
               <strong>Franjas:</strong> {dash.live_today.slots_completed} /{" "}
               {dash.live_today.slots_total} ({dash.live_today.percent}%) ·{" "}
-              <strong>Correos listados:</strong> {dash.live_today.emails_listed} ·{" "}
-              <strong>Match:</strong> {dash.live_today.emails_match}
+              <strong>Hasta ahora ({dash.live_today.current_time_lima ?? "—"}):</strong>{" "}
+              {dash.live_today.slots_completed} / {dash.live_today.slots_expected_by_now ?? 0}{" "}
+              ({dash.live_today.percent_expected ?? 0}%) ·{" "}
+              <strong>Pendientes:</strong> {dash.live_today.slots_pending_now ?? 0}
             </p>
             {dash.live_today.last_poll_at && (
               <p className="muted">
@@ -188,18 +190,30 @@ export default function App({ page }: { page: Page }) {
           </p>
           <p>Próximo pendiente: {dash.first_pending ?? "ninguno"}</p>
           <p>
-            Sincronización:{" "}
-            <span className={dash.paused ? "status-error" : "status-ok"}>
-              {dash.paused ? "PAUSADA" : "ACTIVA"}
+            Histórico:{" "}
+            {dash.historical_auto_sync_enabled ? (
+              <>
+                <span className={dash.paused ? "status-error" : "status-ok"}>
+                  {dash.paused ? "PAUSADO" : "AUTO ACTIVO"}
+                </span>
+                {dash.scheduler_enabled
+                  ? ` — watchdog cada ${pollMin} min`
+                  : " — scheduler off"}
+              </>
+            ) : (
+              <span className="status-ok">MANUAL (solo tú lanzas días)</span>
+            )}
+            {" · "}
+            Live:{" "}
+            <span className={dash.live_today?.enabled ? "status-ok" : "status-pending"}>
+              {dash.live_today?.enabled
+                ? `auto cada ${Math.round((dash.live_today?.interval_sec ?? 600) / 60)} min`
+                : "off"}
             </span>
-            {dash.scheduler_enabled
-              ? ` — seguimiento cada ${pollMin} min (timeout lote ${dash.exec_timeout_min} min)`
-              : " — scheduler deshabilitado en servidor"}
           </p>
           <p className="muted">
             Sectores de <strong>{dash.batch_size}</strong> correos por vuelta del bucle n8n.
-            Tras cada lote, el flujo vuelve a planificar hasta completar el rango. Seguimiento
-            cada {pollMin} min (timeout ventana {dash.exec_timeout_min} min).
+            El histórico no avanza solo salvo que actives AUTO; el live sigue según la hora Lima.
           </p>
           {dash.last_poll_at && (
             <p className="muted">
@@ -235,25 +249,26 @@ export default function App({ page }: { page: Page }) {
             >
               Reconciliar logs
             </button>
-            {dash.paused ? (
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={busy}
-                onClick={() => runAction(async () => postJson("/runs/resume"))}
-              >
-                Reanudar automático
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-danger"
-                disabled={busy}
-                onClick={() => runAction(async () => postJson("/runs/pause"))}
-              >
-                Pausar sincronización
-              </button>
-            )}
+            {dash.historical_auto_sync_enabled &&
+              (dash.paused ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={busy}
+                  onClick={() => runAction(async () => postJson("/runs/resume"))}
+                >
+                  Activar barrido auto
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  disabled={busy}
+                  onClick={() => runAction(async () => postJson("/runs/pause"))}
+                >
+                  Pausar barrido auto
+                </button>
+              ))}
             {(dash.n8n_running_count > 0 || dash.active_n8n_execution_id) && (
               <button
                 type="button"
@@ -327,12 +342,12 @@ export default function App({ page }: { page: Page }) {
           </div>
         )}
 
-        {dash.paused && (
+        {(dash.historical_auto_sync_enabled ? dash.paused : true) && (
           <div className="card card-secondary">
-            <h2>Sincronización manual</h2>
+            <h2>Sincronización manual (histórico)</h2>
             <p className="muted">
-              Con la sync pausada, elige la ventana de fechas (par de días consecutivos)
-              y lanza n8n directamente.
+              Elige la ventana de fechas y lanza n8n. Usa «Reparar» en Días históricos si faltan
+              trazas en <code>email_trace</code>.
             </p>
             <div className="toolbar">
               <label>
@@ -458,6 +473,7 @@ export default function App({ page }: { page: Page }) {
                 <th>Procesados</th>
                 <th>Match</th>
                 <th>Analizado</th>
+                <th>Reparar</th>
               </tr>
             </thead>
             <tbody>
@@ -474,6 +490,29 @@ export default function App({ page }: { page: Page }) {
                     {d.analyzed_at
                       ? new Date(d.analyzed_at).toLocaleString()
                       : "—"}
+                  </td>
+                  <td>
+                    {d.emails_match_count > 0 && d.status !== "pending" ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={busy}
+                        onClick={() =>
+                          runAction(async () => {
+                            const r = await postJson<{ repaired: number; message?: string }>(
+                              `/history/days/${d.analyzed_date}/repair`
+                            );
+                            if (r.repaired === 0) {
+                              alert(r.message ?? "Sin IDs faltantes en email_trace");
+                            }
+                          })
+                        }
+                      >
+                        Reparar trazas
+                      </button>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                 </tr>
               ))}

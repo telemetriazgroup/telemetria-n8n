@@ -12,7 +12,8 @@ from app.database import (
     month_enabled,
     program_range,
 )
-from app.schemas import HistoryDayOut, HistoryPlanDay, HistorySummaryMonth
+from app.schemas import HistoryDayOut, HistoryPlanDay, HistorySummaryMonth, DayAuditOut, DayRepairOut
+from app.services.repair_service import audit_day_gaps, repair_day, scan_days_with_gaps
 
 router = APIRouter(prefix="/api/v1/history", tags=["history"])
 
@@ -99,6 +100,46 @@ def plan_days(
                 )
         d += timedelta(days=1)
     return out
+
+
+@router.get("/days/{day}/audit", response_model=DayAuditOut)
+def audit_day(day: date, db: Session = Depends(get_db)) -> DayAuditOut:
+    return DayAuditOut(**audit_day_gaps(db, day))
+
+
+@router.post("/days/{day}/repair", response_model=DayRepairOut)
+def repair_day_endpoint(
+    day: date,
+    dry_run: bool = Query(False),
+    db: Session = Depends(get_db),
+) -> DayRepairOut:
+    result = repair_day(db, day, only_missing=True, dry_run=dry_run)
+    db.commit()
+    return DayRepairOut(
+        ok=result.get("ok", False),
+        analyzed_date=result.get("analyzed_date"),
+        repaired=result.get("repaired", 0),
+        message_ids=result.get("message_ids", []),
+        n8n_execution_id=result.get("n8n_execution_id"),
+        message=result.get("message"),
+        error=result.get("error"),
+        missing_count=result.get("missing_count", 0),
+    )
+
+
+@router.get("/gaps", response_model=list[DayAuditOut])
+def list_gaps(
+    date_from: Optional[date] = Query(None, alias="from"),
+    date_to: Optional[date] = Query(None, alias="to"),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> list[DayAuditOut]:
+    start, _ = program_range()
+    hist_end = history_range_end()
+    df = max(date_from or start, start)
+    dt = date_to or hist_end
+    rows = scan_days_with_gaps(db, df, dt, limit=limit)
+    return [DayAuditOut(**r) for r in rows]
 
 
 @router.get("/days/{day}", response_model=HistoryDayOut)

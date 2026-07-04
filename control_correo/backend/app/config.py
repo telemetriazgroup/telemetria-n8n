@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     control_watchdog_interval_sec: int = 120
     control_exec_timeout_min: int = 90
     scheduler_enabled: bool = True
+    # Barrido histórico automático (watchdog). False = solo manual por el usuario.
+    historical_auto_sync_enabled: bool = False
 
     # Seguimiento en vivo del día actual (independiente del histórico)
     live_today_enabled: bool = True

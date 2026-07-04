@@ -61,6 +61,31 @@ def completed_slot_indices(db: Session, day: date) -> set[int]:
     return {r["slot_index"] for r in rows if r["status"] == "completed"}
 
 
+def pending_slots_until_now(db: Session, day: date | None = None) -> list[LiveSlotPlan]:
+    """Franjas cuyo inicio ya pasó y aún no están completed."""
+    day = day or today_lima()
+    now = now_lima()
+    done = completed_slot_indices(db, day)
+    pending: list[LiveSlotPlan] = []
+    for slot in build_slots_for_day(day):
+        if slot.slot_index in done:
+            continue
+        if slot.slot_start.astimezone(LIMA) <= now:
+            pending.append(slot)
+    return pending
+
+
+def expected_slots_by_now(day: date | None = None) -> int:
+    """Cuántas franjas deberían haber iniciado según la hora actual (Lima)."""
+    day = day or today_lima()
+    now = now_lima()
+    count = 0
+    for slot in build_slots_for_day(day):
+        if slot.slot_start.astimezone(LIMA) <= now:
+            count += 1
+    return count
+
+
 def next_live_slot(db: Session, day: date | None = None) -> LiveSlotPlan | None:
     """Primera franja pendiente del día (no completada y ya iniciada o en curso)."""
     day = day or today_lima()
@@ -85,12 +110,19 @@ def live_day_summary(db: Session, day: date) -> dict:
     listed = sum(s["emails_listed_count"] for s in slots)
     processed = sum(s["emails_processed_count"] for s in slots)
     matches = sum(s["emails_match_count"] for s in slots)
+    expected = expected_slots_by_now(day)
+    pending_list = pending_slots_until_now(db, day)
+    now = now_lima()
     return {
         "analyzed_date": day,
         "slots_total": total,
         "slots_completed": completed,
+        "slots_expected_by_now": expected,
+        "slots_pending_now": len(pending_list),
+        "current_time_lima": now.strftime("%H:%M"),
         "emails_listed": listed,
         "emails_processed": processed,
         "emails_match": matches,
         "percent": round(100.0 * completed / total, 1) if total else 0.0,
+        "percent_expected": round(100.0 * completed / expected, 1) if expected else 0.0,
     }

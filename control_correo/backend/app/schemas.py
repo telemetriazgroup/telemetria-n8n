@@ -39,6 +39,7 @@ class DashboardOut(BaseModel):
     watchdog_interval_sec: int
     exec_timeout_min: int
     scheduler_enabled: bool
+    historical_auto_sync_enabled: bool = False
     sync_end_dynamic: bool = True
     yesterday_date: Optional[date] = None
     live_today: Optional["LiveTodayOut"] = None
@@ -59,7 +60,11 @@ class LiveTodayOut(BaseModel):
     slot_minutes: int
     slots_total: int
     slots_completed: int
+    slots_expected_by_now: int = 0
+    slots_pending_now: int = 0
+    current_time_lima: str = ""
     percent: float
+    percent_expected: float = 0.0
     emails_listed: int
     emails_match: int
     last_poll_at: Optional[datetime] = None
@@ -92,6 +97,28 @@ class HistorySummaryMonth(BaseModel):
     days_in_month: int
     days_completed: int
     total_matches: int
+
+
+class DayAuditOut(BaseModel):
+    analyzed_date: str
+    found: bool
+    status: Optional[str] = None
+    match_ids_total: int = 0
+    processed_ids_total: int = 0
+    trace_ids_found: int = 0
+    missing_match_ids: list[str] = []
+    missing_count: int = 0
+
+
+class DayRepairOut(BaseModel):
+    ok: bool
+    analyzed_date: Optional[str] = None
+    repaired: int = 0
+    message_ids: list[str] = []
+    n8n_execution_id: Optional[str] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+    missing_count: int = 0
 
 
 class TraceOut(BaseModel):

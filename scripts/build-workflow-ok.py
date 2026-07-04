@@ -107,6 +107,8 @@ nodes = [
         'webhookId': 'telemetria-historico-run',
     },
     code_node('node-webhook-cfg', 'Config histórico API', [40, 880], '00c-webhook-config-historico.js'),
+    if_node('node-if-repair', '¿Modo repair?', [260, 880], '={{ $json.mode }}', 'repair'),
+    code_node('node-repair-ids', 'Reparar IDs', [480, 980], '12-repair-expand-ids.js'),
     {
         'parameters': {
             'httpMethod': 'POST',
@@ -296,7 +298,12 @@ connections = {
     'Histórico manual': {'main': [[{'node': 'Config histórico', 'type': 'main', 'index': 0}]]},
     'Webhook histórico': {'main': [[{'node': 'Config histórico API', 'type': 'main', 'index': 0}]]},
     'Webhook live': {'main': [[{'node': 'Config live API', 'type': 'main', 'index': 0}]]},
-    'Config histórico API': {'main': [[{'node': 'Obtener días analizados', 'type': 'main', 'index': 0}]]},
+    'Config histórico API': {'main': [[{'node': '¿Modo repair?', 'type': 'main', 'index': 0}]]},
+    '¿Modo repair?': {'main': [
+        [{'node': 'Reparar IDs', 'type': 'main', 'index': 0}],
+        [{'node': 'Obtener días analizados', 'type': 'main', 'index': 0}],
+    ]},
+    'Reparar IDs': {'main': [[{'node': 'Sector lote', 'type': 'main', 'index': 0}]]},
     'Config live API': {'main': [[{'node': 'Construir consulta Gmail', 'type': 'main', 'index': 0}]]},
     'Config histórico': {'main': [[{'node': 'Obtener días analizados', 'type': 'main', 'index': 0}]]},
     'Reiniciar hoy': {'main': [[{'node': 'Config reinicio', 'type': 'main', 'index': 0}]]},

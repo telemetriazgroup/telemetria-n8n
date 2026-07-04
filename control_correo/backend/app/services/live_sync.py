@@ -72,11 +72,10 @@ def live_tick(db: Session) -> str | None:
         {"ts": _utcnow()},
     )
 
-    if state.paused:
-        return "live pausado"
-
     if _live_run_active(db):
         return "live run en curso"
+
+    # Live corre independiente de control_state.paused (histórico manual).
 
     slot = next_live_slot(db)
     if not slot:

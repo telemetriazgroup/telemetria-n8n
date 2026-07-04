@@ -163,6 +163,24 @@ class N8nClient:
             payload["slotEndEpoch"] = slot_end_epoch
         return self._trigger_webhook(settings.n8n_webhook_path, payload)
 
+    def trigger_repair(
+        self,
+        *,
+        process_date: str,
+        message_ids: list[str],
+    ) -> Optional[str]:
+        payload = {
+            "mode": "repair",
+            "processDate": process_date,
+            "startDate": process_date,
+            "endDate": process_date,
+            "messageIds": message_ids,
+            "batchSize": settings.n8n_batch_size,
+            "tzOffsetHours": -5,
+            "skipKnownInDb": False,
+        }
+        return self._trigger_webhook(settings.n8n_webhook_path, payload)
+
     def trigger_live_slot(
         self,
         *,

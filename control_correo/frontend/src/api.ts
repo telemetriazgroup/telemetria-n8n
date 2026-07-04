@@ -54,6 +54,7 @@ export type Dashboard = {
   watchdog_interval_sec: number;
   exec_timeout_min: number;
   scheduler_enabled: boolean;
+  historical_auto_sync_enabled?: boolean;
 };
 
 export type N8nTestResult = {
@@ -112,11 +113,24 @@ export type LiveToday = {
   slot_minutes: number;
   slots_total: number;
   slots_completed: number;
+  slots_expected_by_now?: number;
+  slots_pending_now?: number;
+  current_time_lima?: string;
   percent: number;
+  percent_expected?: number;
   emails_listed: number;
   emails_match: number;
   last_poll_at: string | null;
   slots: LiveSlot[];
+};
+
+export type DayAudit = {
+  analyzed_date: string;
+  found: boolean;
+  status?: string | null;
+  match_ids_total: number;
+  missing_count: number;
+  missing_match_ids: string[];
 };
 
 export type TraceAttachment = {

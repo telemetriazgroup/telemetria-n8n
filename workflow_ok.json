@@ -51,7 +51,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Config histórico desde Webhook (control_correo) ─────────────────────────\n// POST /webhook/historico-run\n// Body JSON: { \"mode\": \"historical\", \"startDate\": \"2026-01-16\", \"endDate\": \"2026-01-17\" }\n\nconst raw = $input.first()?.json || {};\nconst body =\n  raw.body && typeof raw.body === 'object' && !Array.isArray(raw.body)\n    ? raw.body\n    : raw;\n\nconst startDate = String(body.startDate || body.start_date || '').trim();\nconst endDate = String(body.endDate || body.end_date || '').trim();\nconst mode = String(body.mode || 'historical').toLowerCase();\n\nif (!startDate || !endDate) {\n  throw new Error(\n    'Webhook histórico: indica startDate y endDate (YYYY-MM-DD). ' +\n    'Ejemplo: {\"mode\":\"historical\",\"startDate\":\"2026-01-16\",\"endDate\":\"2026-01-17\"}'\n  );\n}\n\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(startDate) || !/^\\d{4}-\\d{2}-\\d{2}$/.test(endDate)) {\n  throw new Error('Webhook histórico: fechas deben ser YYYY-MM-DD.');\n}\n\nreturn [{\n  json: {\n    mode,\n    startDate,\n    endDate,\n    tzOffsetHours: Number(body.tzOffsetHours ?? -5),\n    receivedOnly: body.receivedOnly !== false,\n    monitorMailbox: String(body.monitorMailbox || 'telemetria@zgroup.com.pe').trim(),\n    keywordFilterEnabled: body.keywordFilterEnabled !== false,\n    skipKnownInDb: body.skipKnownInDb !== false,\n    keywords: Array.isArray(body.keywords) && body.keywords.length\n      ? body.keywords\n      : ['Luis', 'Eusebio'],\n    telemetriaVariants: Array.isArray(body.telemetriaVariants) && body.telemetriaVariants.length\n      ? body.telemetriaVariants\n      : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'],\n    matchExcerptRadius: Number(body.matchExcerptRadius ?? 120),\n    batchSize: Math.max(1, Math.min(50, Number(body.batchSize ?? 5))),\n    _source: 'webhook'\n  }\n}];\n"
+        "jsCode": "// ── Config histórico desde Webhook (control_correo) ─────────────────────────\n// POST /webhook/historico-run\n// Body histórico: { \"mode\": \"historical\", \"startDate\": \"...\", \"endDate\": \"...\" }\n// Body repair:    { \"mode\": \"repair\", \"processDate\": \"2026-07-01\", \"messageIds\": [\"abc\", ...] }\n\nconst raw = $input.first()?.json || {};\nconst body =\n  raw.body && typeof raw.body === 'object' && !Array.isArray(raw.body)\n    ? raw.body\n    : raw;\n\nconst mode = String(body.mode || 'historical').toLowerCase();\nconst startDate = String(body.startDate || body.start_date || '').trim();\nconst endDate = String(body.endDate || body.end_date || '').trim();\nconst processDate = String(body.processDate || body.process_date || startDate || '').trim();\nconst messageIds = Array.isArray(body.messageIds)\n  ? body.messageIds.map(String).filter(Boolean)\n  : Array.isArray(body.message_ids)\n    ? body.message_ids.map(String).filter(Boolean)\n    : [];\n\nif (mode === 'repair') {\n  if (!processDate || !/^\\d{4}-\\d{2}-\\d{2}$/.test(processDate)) {\n    throw new Error('Webhook repair: processDate YYYY-MM-DD requerido.');\n  }\n  if (!messageIds.length) {\n    throw new Error('Webhook repair: messageIds[] no vacío.');\n  }\n  return [{\n    json: {\n      mode: 'repair',\n      processDate,\n      startDate: processDate,\n      endDate: processDate,\n      messageIds,\n      tzOffsetHours: Number(body.tzOffsetHours ?? -5),\n      receivedOnly: body.receivedOnly !== false,\n      monitorMailbox: String(body.monitorMailbox || 'telemetria@zgroup.com.pe').trim(),\n      keywordFilterEnabled: body.keywordFilterEnabled !== false,\n      skipKnownInDb: false,\n      keywords: Array.isArray(body.keywords) && body.keywords.length\n        ? body.keywords\n        : ['Luis', 'Eusebio'],\n      telemetriaVariants: Array.isArray(body.telemetriaVariants) && body.telemetriaVariants.length\n        ? body.telemetriaVariants\n        : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'],\n      matchExcerptRadius: Number(body.matchExcerptRadius ?? 120),\n      batchSize: Math.max(1, Math.min(50, Number(body.batchSize ?? 5))),\n      _source: 'webhook-repair',\n    },\n  }];\n}\n\nif (!startDate || !endDate) {\n  throw new Error(\n    'Webhook histórico: indica startDate y endDate (YYYY-MM-DD). ' +\n    'Ejemplo: {\"mode\":\"historical\",\"startDate\":\"2026-01-16\",\"endDate\":\"2026-01-17\"}'\n  );\n}\n\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(startDate) || !/^\\d{4}-\\d{2}-\\d{2}$/.test(endDate)) {\n  throw new Error('Webhook histórico: fechas deben ser YYYY-MM-DD.');\n}\n\nreturn [{\n  json: {\n    mode,\n    startDate,\n    endDate,\n    tzOffsetHours: Number(body.tzOffsetHours ?? -5),\n    receivedOnly: body.receivedOnly !== false,\n    monitorMailbox: String(body.monitorMailbox || 'telemetria@zgroup.com.pe').trim(),\n    keywordFilterEnabled: body.keywordFilterEnabled !== false,\n    skipKnownInDb: body.skipKnownInDb !== false,\n    keywords: Array.isArray(body.keywords) && body.keywords.length\n      ? body.keywords\n      : ['Luis', 'Eusebio'],\n    telemetriaVariants: Array.isArray(body.telemetriaVariants) && body.telemetriaVariants.length\n      ? body.telemetriaVariants\n      : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'],\n    matchExcerptRadius: Number(body.matchExcerptRadius ?? 120),\n    batchSize: Math.max(1, Math.min(50, Number(body.batchSize ?? 5))),\n    _source: 'webhook'\n  }\n}];\n"
       },
       "id": "node-webhook-cfg",
       "name": "Config histórico API",
@@ -60,6 +60,51 @@
       "position": [
         40,
         880
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.mode }}",
+              "rightValue": "repair",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-repair",
+      "name": "¿Modo repair?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        260,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Modo repair: expandir messageIds → items { id } para Leer Gmail ─────────\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.processDate)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Falta Config histórico API con mode=repair.');\n}\n\nconst cfg = getCfg();\nconst mode = String(cfg.mode || '').toLowerCase();\nif (mode !== 'repair') {\n  throw new Error('Reparar IDs: se esperaba mode=repair.');\n}\n\nconst processDate = String(cfg.processDate || '').trim();\nconst ids = Array.isArray(cfg.messageIds) ? cfg.messageIds : [];\nif (!processDate || !ids.length) {\n  throw new Error('Repair: processDate y messageIds[] requeridos.');\n}\n\nreturn ids.map((raw) => ({\n  json: {\n    id: String(raw).trim(),\n    processDate,\n    mode: 'repair',\n    reviewMode: 'historical',\n  },\n})).filter((item) => item.json.id);\n"
+      },
+      "id": "node-repair-ids",
+      "name": "Reparar IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        980
       ]
     },
     {
@@ -1041,7 +1086,36 @@
       "main": [
         [
           {
+            "node": "¿Modo repair?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Modo repair?": {
+      "main": [
+        [
+          {
+            "node": "Reparar IDs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Obtener días analizados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reparar IDs": {
+      "main": [
+        [
+          {
+            "node": "Sector lote",
             "type": "main",
             "index": 0
           }
