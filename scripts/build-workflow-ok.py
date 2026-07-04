@@ -109,6 +109,21 @@ nodes = [
     code_node('node-webhook-cfg', 'Config histórico API', [40, 880], '00c-webhook-config-historico.js'),
     {
         'parameters': {
+            'httpMethod': 'POST',
+            'path': 'live-run',
+            'responseMode': 'onReceived',
+            'options': {},
+        },
+        'id': 'node-webhook-live',
+        'name': 'Webhook live',
+        'type': 'n8n-nodes-base.webhook',
+        'typeVersion': 2,
+        'position': [-200, 1080],
+        'webhookId': 'telemetria-live-run',
+    },
+    code_node('node-webhook-live-cfg', 'Config live API', [40, 1080], '00d-webhook-config-live.js'),
+    {
+        'parameters': {
             'assignments': {
                 'assignments': [
                     {'id': 'c1', 'name': 'mode', 'value': 'incremental', 'type': 'string'},
@@ -225,6 +240,12 @@ nodes = [
     code_node('node-filter-relevant', 'Filtrar recibidos relevantes', [2900, 780], '07-filtrar-recibidos-relevantes.js'),
     if_bool('node-if-close-day', '¿Cerrar día sin matches?', [3120, 780],
             '={{ $json._cerrarDiaHistorico === true }}'),
+    if_node('node-if-live-mode', '¿Modo live?', [3680, 680],
+            "={{ (() => { "
+            "for (const n of ['Config live API','Config histórico API','Config histórico','Configuración']) { "
+            "try { if ($(n).isExecuted && String($(n).first().json.mode||'').toLowerCase()==='live_today') return 'live_today'; } catch(e){} "
+            "} return 'historical'; "
+            "})() }}", 'live_today'),
     code_node('node-prepare-trace', 'Preparar trazabilidad', [3340, 680], '04-preparar-trace.js'),
     {
         'parameters': {
@@ -255,6 +276,8 @@ nodes = [
         'position': [3340, 880], 'credentials': PG,
     },
     code_node('node-reg-day', 'Registrar día histórico', [3560, 480], '10-registrar-dia-historico.js'),
+    code_node('node-reg-slot', 'Registrar slot live', [3780, 820], '11-registrar-slot-live.js'),
+    pg_node('node-save-slot', 'Guardar slot live', [4000, 820], '={{ $json.upsertSql }}', always_out=True),
     pg_node('node-save-day', 'Guardar resumen día', [3780, 480],
             '={{ $json.upsertSql }}', always_out=True),
     # reset branch
@@ -272,7 +295,9 @@ connections = {
     'Programar revisión': {'main': [[{'node': 'Configuración', 'type': 'main', 'index': 0}]]},
     'Histórico manual': {'main': [[{'node': 'Config histórico', 'type': 'main', 'index': 0}]]},
     'Webhook histórico': {'main': [[{'node': 'Config histórico API', 'type': 'main', 'index': 0}]]},
+    'Webhook live': {'main': [[{'node': 'Config live API', 'type': 'main', 'index': 0}]]},
     'Config histórico API': {'main': [[{'node': 'Obtener días analizados', 'type': 'main', 'index': 0}]]},
+    'Config live API': {'main': [[{'node': 'Construir consulta Gmail', 'type': 'main', 'index': 0}]]},
     'Config histórico': {'main': [[{'node': 'Obtener días analizados', 'type': 'main', 'index': 0}]]},
     'Reiniciar hoy': {'main': [[{'node': 'Config reinicio', 'type': 'main', 'index': 0}]]},
     'Config reinicio': {'main': [[{'node': 'Validar contraseña reset', 'type': 'main', 'index': 0}]]},
@@ -323,7 +348,13 @@ connections = {
         [{'node': 'Pasar a registrar', 'type': 'main', 'index': 0}],
     ]},
     'Guardar referencia adjuntos': {'main': [[{'node': 'Pasar a registrar', 'type': 'main', 'index': 0}]]},
-    'Pasar a registrar': {'main': [[{'node': 'Registrar día histórico', 'type': 'main', 'index': 0}]]},
+    'Pasar a registrar': {'main': [[{'node': '¿Modo live?', 'type': 'main', 'index': 0}]]},
+    '¿Modo live?': {'main': [
+        [{'node': 'Registrar slot live', 'type': 'main', 'index': 0}],
+        [{'node': 'Registrar día histórico', 'type': 'main', 'index': 0}],
+    ]},
+    'Registrar slot live': {'main': [[{'node': 'Guardar slot live', 'type': 'main', 'index': 0}]]},
+    'Guardar slot live': {'main': [[]]},
     'Registrar día histórico': {'main': [[{'node': 'Guardar resumen día', 'type': 'main', 'index': 0}]]},
     'Guardar resumen día': {'main': [[{'node': 'Obtener días analizados', 'type': 'main', 'index': 0}]]},
 }

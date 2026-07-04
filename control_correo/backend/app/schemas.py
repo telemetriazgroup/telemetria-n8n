@@ -37,6 +37,31 @@ class DashboardOut(BaseModel):
     watchdog_interval_sec: int
     exec_timeout_min: int
     scheduler_enabled: bool
+    sync_end_dynamic: bool = True
+    yesterday_date: Optional[date] = None
+    live_today: Optional["LiveTodayOut"] = None
+
+
+class LiveSlotOut(BaseModel):
+    slot_index: int
+    label: str
+    status: str
+    emails_listed: int = 0
+    emails_match: int = 0
+
+
+class LiveTodayOut(BaseModel):
+    enabled: bool
+    today_date: date
+    interval_sec: int
+    slot_minutes: int
+    slots_total: int
+    slots_completed: int
+    percent: float
+    emails_listed: int
+    emails_match: int
+    last_poll_at: Optional[datetime] = None
+    slots: list[LiveSlotOut] = []
 
 
 class HistoryDayOut(BaseModel):

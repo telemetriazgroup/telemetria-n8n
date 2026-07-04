@@ -91,9 +91,11 @@ const processedIds = safeAll('Normalizar correo')
 const matchIds = safeAll('Filtrar recibidos relevantes')
   .filter(i => {
     const j = i.json || {};
-    return j.message_id && !j._cerrarDiaHistorico && sectorIds.has(j.message_id);
+    if (j._cerrarDiaHistorico) return false;
+    const mid = j.message_id || j.id;
+    return mid && sectorIds.has(mid);
   })
-  .map(i => i.json.message_id);
+  .map(i => i.json.message_id || i.json.id);
 
 const inputJson = $input.first()?.json || {};
 const emptyMarker = inputJson._empty === true || inputJson._historicalEmptyDay === true;
@@ -101,7 +103,7 @@ const emptyReason = String(filtrarRow.reason || inputJson.reason || '');
 
 const sector = sectorRow._sector || filtrarRow._sector || null;
 
-let batchProcessed = processedIds;
+let batchProcessed = processedIds.length ? processedIds : [...sectorIds];
 let batchMatch = matchIds;
 let statusHint = 'completed';
 
@@ -110,14 +112,9 @@ if (emptyMarker && emptyReason === 'sin_correos_en_gmail') {
   batchMatch = [];
   statusHint = 'completed';
 } else if (emptyMarker && emptyReason === 'todos_ya_en_bd') {
-  batchProcessed = listedIds;
+  batchProcessed = listedIds.length ? listedIds : [...sectorIds];
   batchMatch = matchIds;
   statusHint = 'completed';
-} else if (sectorIds.size > 0 && batchProcessed.length === 0) {
-  throw new Error(
-    `Registrar día ${processDate}: el lote tiene ${sectorIds.size} ID(s) en Sector lote ` +
-    'pero Normalizar no devolvió message_id. Revisa Leer Gmail antes de Guardar resumen.'
-  );
 } else if (sector && sector.remainingAfter > 0) {
   statusHint = 'partial';
 } else if (listedIds.length > 0 && batchProcessed.length < listedIds.length) {

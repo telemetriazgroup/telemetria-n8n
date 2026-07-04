@@ -64,6 +64,36 @@
     },
     {
       "parameters": {
+        "httpMethod": "POST",
+        "path": "live-run",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "node-webhook-live",
+      "name": "Webhook live",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        1080
+      ],
+      "webhookId": "telemetria-live-run"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Config live today desde Webhook (control_correo) ────────────────────────\n// POST /webhook/live-run\n// Body: mode live_today, processDate, slotStartEpoch, slotEndEpoch, slotIndex\n\nconst raw = $input.first()?.json || {};\nconst body =\n  raw.body && typeof raw.body === 'object' && !Array.isArray(raw.body)\n    ? raw.body\n    : raw;\n\nconst processDate = String(body.processDate || body.startDate || '').trim();\nconst slotIndex = Number(body.slotIndex ?? 0);\nconst slotStartEpoch = Number(body.slotStartEpoch ?? 0);\nconst slotEndEpoch = Number(body.slotEndEpoch ?? 0);\nconst slotLabel = String(body.slotLabel || '').trim();\n\nif (!processDate || !/^\\d{4}-\\d{2}-\\d{2}$/.test(processDate)) {\n  throw new Error('Webhook live: processDate YYYY-MM-DD requerido.');\n}\nif (!slotStartEpoch || !slotEndEpoch || slotEndEpoch <= slotStartEpoch) {\n  throw new Error('Webhook live: slotStartEpoch y slotEndEpoch requeridos.');\n}\n\nreturn [{\n  json: {\n    mode: 'live_today',\n    processDate,\n    startDate: processDate,\n    endDate: processDate,\n    slotIndex,\n    slotStartEpoch,\n    slotEndEpoch,\n    slotLabel,\n    tzOffsetHours: Number(body.tzOffsetHours ?? -5),\n    receivedOnly: body.receivedOnly !== false,\n    monitorMailbox: String(body.monitorMailbox || 'telemetria@zgroup.com.pe').trim(),\n    keywordFilterEnabled: body.keywordFilterEnabled !== false,\n    skipKnownInDb: body.skipKnownInDb !== false,\n    keywords: Array.isArray(body.keywords) && body.keywords.length\n      ? body.keywords\n      : ['Luis', 'Eusebio'],\n    telemetriaVariants: Array.isArray(body.telemetriaVariants) && body.telemetriaVariants.length\n      ? body.telemetriaVariants\n      : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'],\n    matchExcerptRadius: Number(body.matchExcerptRadius ?? 120),\n    batchSize: Math.max(1, Math.min(50, Number(body.batchSize ?? 5))),\n    reviewMode: 'incremental',\n    _source: 'webhook-live'\n  }\n}];\n"
+      },
+      "id": "node-webhook-live-cfg",
+      "name": "Config live API",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        1080
+      ]
+    },
+    {
+      "parameters": {
         "assignments": {
           "assignments": [
             {
@@ -378,7 +408,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Construir consulta Gmail ─────────────────────────────────────────────────\n// Modos — leer Config histórico o Configuración (compatible runOnceForEachItem)\n\nfunction nodeJson(nodeName) {\n  try {\n    const items = $(nodeName).all();\n    if (items && items.length && items[0].json) return items[0].json;\n  } catch (e) { /* nodo no ejecutado en esta rama */ }\n  return null;\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    const j = nodeJson(name);\n    if (j && (j.mode || j.startDate !== undefined)) return j;\n  }\n  throw new Error('Ejecuta Configuración o Config histórico antes de este nodo.');\n}\n\nfunction inputJson() {\n  try {\n    const item = $input.item;\n    if (item && item.json) return item.json;\n  } catch (e) { /* runOnceForAllItems */ }\n  const all = $input.all();\n  return (all[0] && all[0].json) || {};\n}\n\nconst cfg = getCfg();\nconst dayItem = inputJson();\nconst tzOffset = Number(cfg.tzOffsetHours ?? -5);\nconst mode = String(dayItem.mode || cfg.mode || 'incremental').toLowerCase();\n\nfunction startOfDayEpoch(y, monthIndex, d) {\n  return Math.floor(Date.UTC(y, monthIndex, d, 0, 0, 0) / 1000) - tzOffset * 3600;\n}\n\nfunction localTodayParts() {\n  const localMs = Date.now() + tzOffset * 3600 * 1000;\n  const ld = new Date(localMs);\n  return { y: ld.getUTCFullYear(), m: ld.getUTCMonth(), d: ld.getUTCDate() };\n}\n\nfunction epochFromYmd(ymd) {\n  const [y, m, d] = String(ymd).split('-').map(Number);\n  return startOfDayEpoch(y, m - 1, d);\n}\n\nlet afterEpoch;\nlet beforeEpoch;\nlet processDate = null;\n\nif (mode === 'historical') {\n  processDate = String(dayItem.processDate || '').trim();\n  if (!processDate) {\n    throw new Error('Modo historical: falta processDate (Planificar días pendientes).');\n  }\n  afterEpoch = epochFromYmd(processDate);\n  beforeEpoch = afterEpoch + 86400;\n} else if (mode === 'range') {\n  if (!cfg.startDate || !cfg.endDate) {\n    throw new Error('Modo \"range\": indica startDate y endDate (YYYY-MM-DD) en Configuración.');\n  }\n  afterEpoch = epochFromYmd(cfg.startDate);\n  beforeEpoch = epochFromYmd(cfg.endDate) + 86400;\n} else if (mode === 'today') {\n  const { y, m, d } = localTodayParts();\n  afterEpoch = startOfDayEpoch(y, m, d);\n  beforeEpoch = afterEpoch + 86400;\n} else {\n  beforeEpoch = Math.floor(Date.now() / 1000);\n  const { y, m, d } = localTodayParts();\n  afterEpoch = startOfDayEpoch(y, m, d);\n\n  const last = nodeJson('Obtener última revisión') || {};\n  const lastEpoch = Number(last.last_search_before_epoch || 0);\n  if (lastEpoch > 0) {\n    const lastLocalMs = lastEpoch * 1000 + tzOffset * 3600 * 1000;\n    const ld = new Date(lastLocalMs);\n    const sameDay =\n      ld.getUTCFullYear() === y &&\n      ld.getUTCMonth() === m &&\n      ld.getUTCDate() === d;\n    if (sameDay && lastEpoch < beforeEpoch) {\n      afterEpoch = lastEpoch;\n    }\n  }\n}\n\nlet q = `after:${afterEpoch} before:${beforeEpoch}`;\n\nif (cfg.receivedOnly !== false) {\n  const mailbox = String(cfg.monitorMailbox || 'telemetria@zgroup.com.pe').trim();\n  q += ' -in:sent';\n  if (mailbox) q += ` -from:${mailbox}`;\n}\n\n// En historical: NO filtrar en Gmail — se listan todos los recibidos del día\nif (cfg.keywordFilterEnabled !== false && mode !== 'historical') {\n  const telemetriaKws = Array.isArray(cfg.telemetriaVariants) && cfg.telemetriaVariants.length\n    ? cfg.telemetriaVariants\n    : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'];\n  const persons = Array.isArray(cfg.keywords) && cfg.keywords.length\n    ? cfg.keywords\n    : ['Luis', 'Eusebio'];\n  const telPart = telemetriaKws.map(k => `\"${String(k).trim()}\"`).filter(Boolean).join(' OR ');\n  const personPart = persons.map(k => `\"${String(k).trim()}\"`).filter(Boolean).join(' OR ');\n  if (telPart && personPart) q += ` (${telPart}) (${personPart})`;\n}\n\nlet knownIdsQuery;\nif (mode === 'historical') {\n  const d = processDate.replace(/'/g, '');\n  // email_trace = solo matches; email_history_day.message_ids_processed = todos los leídos\n  knownIdsQuery = `\nSELECT message_id FROM email_trace\nWHERE trace_status = 'active'\n  AND review_mode = 'historical'\n  AND (search_after::date = '${d}'::date OR email_date::date = '${d}'::date)\nUNION\nSELECT jsonb_array_elements_text(message_ids_processed) AS message_id\nFROM email_history_day\nWHERE analyzed_date = '${d}'::date\n`.trim();\n} else if (mode === 'range') {\n  const start = String(cfg.startDate).trim();\n  const end = String(cfg.endDate).trim();\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'range' AND email_date >= '${start}'::date AND email_date < ('${end}'::date + INTERVAL '1 day')`;\n} else {\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'incremental' AND search_before::date = CURRENT_DATE`;\n}\n\nreturn [{\n  json: {\n    gmailQuery: q,\n    reviewMode: mode,\n    processDate,\n    knownIdsQuery,\n    afterEpoch,\n    beforeEpoch,\n    afterIso: new Date(afterEpoch * 1000).toISOString(),\n    beforeIso: new Date(beforeEpoch * 1000).toISOString(),\n    searchWindow: `${new Date(afterEpoch * 1000).toISOString()} → ${new Date(beforeEpoch * 1000).toISOString()}`,\n    rangeStart: mode === 'historical' ? (dayItem.rangeStart || cfg.startDate) : (mode === 'range' ? String(cfg.startDate) : null),\n    rangeEnd: mode === 'historical' ? (dayItem.rangeEnd || cfg.endDate) : (mode === 'range' ? String(cfg.endDate) : null)\n  }\n}];\n"
+        "jsCode": "// ── Construir consulta Gmail ─────────────────────────────────────────────────\n// Modos — leer Config histórico o Configuración (compatible runOnceForEachItem)\n\nfunction nodeJson(nodeName) {\n  try {\n    const items = $(nodeName).all();\n    if (items && items.length && items[0].json) return items[0].json;\n  } catch (e) { /* nodo no ejecutado en esta rama */ }\n  return null;\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    const j = nodeJson(name);\n    if (j && (j.mode || j.startDate !== undefined)) return j;\n  }\n  throw new Error('Ejecuta Configuración o Config histórico antes de este nodo.');\n}\n\nfunction inputJson() {\n  try {\n    const item = $input.item;\n    if (item && item.json) return item.json;\n  } catch (e) { /* runOnceForAllItems */ }\n  const all = $input.all();\n  return (all[0] && all[0].json) || {};\n}\n\nconst cfg = getCfg();\nconst dayItem = inputJson();\nconst tzOffset = Number(cfg.tzOffsetHours ?? -5);\nconst mode = String(dayItem.mode || cfg.mode || 'incremental').toLowerCase();\n\nfunction startOfDayEpoch(y, monthIndex, d) {\n  return Math.floor(Date.UTC(y, monthIndex, d, 0, 0, 0) / 1000) - tzOffset * 3600;\n}\n\nfunction localTodayParts() {\n  const localMs = Date.now() + tzOffset * 3600 * 1000;\n  const ld = new Date(localMs);\n  return { y: ld.getUTCFullYear(), m: ld.getUTCMonth(), d: ld.getUTCDate() };\n}\n\nfunction epochFromYmd(ymd) {\n  const [y, m, d] = String(ymd).split('-').map(Number);\n  return startOfDayEpoch(y, m - 1, d);\n}\n\nlet afterEpoch;\nlet beforeEpoch;\nlet processDate = null;\nlet slotIndex = null;\n\nif (mode === 'live_today') {\n  processDate = String(cfg.processDate || dayItem.processDate || '').trim();\n  slotIndex = Number(cfg.slotIndex ?? dayItem.slotIndex ?? 0);\n  afterEpoch = Number(cfg.slotStartEpoch ?? dayItem.slotStartEpoch ?? 0);\n  beforeEpoch = Number(cfg.slotEndEpoch ?? dayItem.slotEndEpoch ?? 0);\n  if (!processDate || !afterEpoch || !beforeEpoch) {\n    throw new Error('Modo live_today: processDate y franja horaria (epoch) requeridos.');\n  }\n} else if (mode === 'historical') {\n  processDate = String(dayItem.processDate || '').trim();\n  if (!processDate) {\n    throw new Error('Modo historical: falta processDate (Planificar días pendientes).');\n  }\n  const slotStart = Number(cfg.slotStartEpoch ?? dayItem.slotStartEpoch ?? 0);\n  const slotEnd = Number(cfg.slotEndEpoch ?? dayItem.slotEndEpoch ?? 0);\n  if (slotStart > 0 && slotEnd > slotStart) {\n    afterEpoch = slotStart;\n    beforeEpoch = slotEnd;\n  } else {\n    afterEpoch = epochFromYmd(processDate);\n    beforeEpoch = afterEpoch + 86400;\n  }\n} else if (mode === 'range') {\n  if (!cfg.startDate || !cfg.endDate) {\n    throw new Error('Modo \"range\": indica startDate y endDate (YYYY-MM-DD) en Configuración.');\n  }\n  afterEpoch = epochFromYmd(cfg.startDate);\n  beforeEpoch = epochFromYmd(cfg.endDate) + 86400;\n} else if (mode === 'today') {\n  const { y, m, d } = localTodayParts();\n  afterEpoch = startOfDayEpoch(y, m, d);\n  beforeEpoch = afterEpoch + 86400;\n} else {\n  beforeEpoch = Math.floor(Date.now() / 1000);\n  const { y, m, d } = localTodayParts();\n  afterEpoch = startOfDayEpoch(y, m, d);\n\n  const last = nodeJson('Obtener última revisión') || {};\n  const lastEpoch = Number(last.last_search_before_epoch || 0);\n  if (lastEpoch > 0) {\n    const lastLocalMs = lastEpoch * 1000 + tzOffset * 3600 * 1000;\n    const ld = new Date(lastLocalMs);\n    const sameDay =\n      ld.getUTCFullYear() === y &&\n      ld.getUTCMonth() === m &&\n      ld.getUTCDate() === d;\n    if (sameDay && lastEpoch < beforeEpoch) {\n      afterEpoch = lastEpoch;\n    }\n  }\n}\n\nlet q = `after:${afterEpoch} before:${beforeEpoch}`;\n\nif (cfg.receivedOnly !== false) {\n  const mailbox = String(cfg.monitorMailbox || 'telemetria@zgroup.com.pe').trim();\n  q += ' -in:sent';\n  if (mailbox) q += ` -from:${mailbox}`;\n}\n\n// En historical/live_today: NO filtrar en Gmail — se listan recibidos de la franja\nif (cfg.keywordFilterEnabled !== false && mode !== 'historical' && mode !== 'live_today') {\n  const telemetriaKws = Array.isArray(cfg.telemetriaVariants) && cfg.telemetriaVariants.length\n    ? cfg.telemetriaVariants\n    : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'];\n  const persons = Array.isArray(cfg.keywords) && cfg.keywords.length\n    ? cfg.keywords\n    : ['Luis', 'Eusebio'];\n  const telPart = telemetriaKws.map(k => `\"${String(k).trim()}\"`).filter(Boolean).join(' OR ');\n  const personPart = persons.map(k => `\"${String(k).trim()}\"`).filter(Boolean).join(' OR ');\n  if (telPart && personPart) q += ` (${telPart}) (${personPart})`;\n}\n\nlet knownIdsQuery;\nif (mode === 'live_today') {\n  const d = processDate.replace(/'/g, '');\n  const idx = Number(slotIndex ?? 0);\n  knownIdsQuery = `\nSELECT message_id FROM email_trace\nWHERE trace_status = 'active'\n  AND review_mode = 'incremental'\n  AND email_date >= to_timestamp(${afterEpoch}) AT TIME ZONE 'America/Lima'\n  AND email_date < to_timestamp(${beforeEpoch}) AT TIME ZONE 'America/Lima'\nUNION\nSELECT jsonb_array_elements_text(message_ids_processed) AS message_id\nFROM email_history_slot\nWHERE analyzed_date = '${d}'::date AND slot_index = ${idx}\n`.trim();\n} else if (mode === 'historical') {\n  const d = processDate.replace(/'/g, '');\n  // email_trace = solo matches; email_history_day.message_ids_processed = todos los leídos\n  knownIdsQuery = `\nSELECT message_id FROM email_trace\nWHERE trace_status = 'active'\n  AND review_mode = 'historical'\n  AND (search_after::date = '${d}'::date OR email_date::date = '${d}'::date)\nUNION\nSELECT jsonb_array_elements_text(message_ids_processed) AS message_id\nFROM email_history_day\nWHERE analyzed_date = '${d}'::date\n`.trim();\n} else if (mode === 'range') {\n  const start = String(cfg.startDate).trim();\n  const end = String(cfg.endDate).trim();\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'range' AND email_date >= '${start}'::date AND email_date < ('${end}'::date + INTERVAL '1 day')`;\n} else {\n  knownIdsQuery = `SELECT message_id FROM email_trace WHERE trace_status = 'active' AND review_mode = 'incremental' AND search_before::date = CURRENT_DATE`;\n}\n\nreturn [{\n  json: {\n    gmailQuery: q,\n    reviewMode: mode === 'live_today' ? 'incremental' : mode,\n    processDate,\n    slotIndex,\n    knownIdsQuery,\n    afterEpoch,\n    beforeEpoch,\n    afterIso: new Date(afterEpoch * 1000).toISOString(),\n    beforeIso: new Date(beforeEpoch * 1000).toISOString(),\n    searchWindow: `${new Date(afterEpoch * 1000).toISOString()} → ${new Date(beforeEpoch * 1000).toISOString()}`,\n    rangeStart: mode === 'historical' ? (dayItem.rangeStart || cfg.startDate) : (mode === 'range' ? String(cfg.startDate) : null),\n    rangeEnd: mode === 'historical' ? (dayItem.rangeEnd || cfg.endDate) : (mode === 'range' ? String(cfg.endDate) : null)\n  }\n}];\n"
       },
       "id": "node-buildquery",
       "name": "Construir consulta Gmail",
@@ -553,7 +583,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Pasar a registrar (tras guardar trazas/adjuntos o sin matches) ───────────\n// Emite 1 item para disparar Registrar + Guardar resumen una sola vez por lote.\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all() || []; } catch (e) { return []; }\n}\n\nfunction sectorMessageIds() {\n  const ids = new Set();\n  for (const item of safeAll('Sector lote')) {\n    if (item.json && item.json.id) ids.add(item.json.id);\n  }\n  if (!ids.size) {\n    for (const item of safeAll('Filtrar solo nuevos')) {\n      if (item.json && item.json.id) ids.add(item.json.id);\n    }\n  }\n  return ids;\n}\n\nconst sectorIds = [...sectorMessageIds()];\nconst filtrarRow = safeAll('Filtrar solo nuevos')[0]?.json || {};\nconst dayCtx = filtrarRow._dayCtx || safeAll('Sector lote')[0]?.json?._dayCtx || {};\n\nreturn [{\n  json: {\n    _loteListo: true,\n    sectorCount: sectorIds.length,\n    _dayCtx: dayCtx\n  }\n}];\n"
+        "jsCode": "// ── Pasar a registrar (UNA sola vez por lote de Sector lote) ────────────────\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all() || []; } catch (e) { return []; }\n}\n\nfunction sectorMessageIds() {\n  const ids = new Set();\n  for (const item of safeAll('Sector lote')) {\n    if (item.json && item.json.id) ids.add(item.json.id);\n  }\n  if (!ids.size) {\n    for (const item of safeAll('Filtrar solo nuevos')) {\n      if (item.json && item.json.id) ids.add(item.json.id);\n    }\n  }\n  return ids;\n}\n\nconst sectorIds = sectorMessageIds();\nconst sectorMeta = safeAll('Sector lote').find((i) => i.json?._sector)?.json?._sector || {};\nconst sectorCount = Number(sectorMeta.sectorCount || sectorIds.size || 0);\n\nconst filtrarRow = safeAll('Filtrar solo nuevos')[0]?.json || {};\nconst dayCtx = filtrarRow._dayCtx || safeAll('Sector lote')[0]?.json?._dayCtx || {};\n\nif (!sectorCount) {\n  return [{\n    json: {\n      _loteListo: true,\n      sectorCount: 0,\n      _dayCtx: dayCtx,\n    },\n  }];\n}\n\nconst normalizedInSector = safeAll('Normalizar correo').filter(\n  (i) => i.json?.message_id && sectorIds.has(i.json.message_id)\n);\n\nif (normalizedInSector.length < sectorCount) {\n  return [];\n}\n\nconst staticData = $getWorkflowStaticData('global');\nconst batchKey = `${dayCtx.processDate || '?'}:${[...sectorIds].sort().join('|')}`;\nif (staticData.lastRegisteredBatch === batchKey) {\n  return [];\n}\nstaticData.lastRegisteredBatch = batchKey;\n\nreturn [{\n  json: {\n    _loteListo: true,\n    sectorCount,\n    normalizedCount: normalizedInSector.length,\n    _dayCtx: dayCtx,\n    batchKey,\n  },\n}];\n"
       },
       "id": "node-pass-reg",
       "name": "Pasar a registrar",
@@ -649,7 +679,39 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Preparar insert email_trace (sin campos auxiliares) ─────────────────────\nconst out = [];\nfor (const item of $input.all()) {\n  const { attachments, label_ids, ...row } = item.json;\n  out.push({\n    json: {\n      ...row,\n      trace_status: row.trace_status || 'active'\n    }\n  });\n}\nreturn out;\n"
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { for (const n of ['Config live API','Config histórico API','Config histórico','Configuración']) { try { if ($(n).isExecuted && String($(n).first().json.mode||'').toLowerCase()==='live_today') return 'live_today'; } catch(e){} } return 'historical'; })() }}",
+              "rightValue": "live_today",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-live-mode",
+      "name": "¿Modo live?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3680,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Preparar insert email_trace (solo columnas válidas de la tabla) ─────────\n\nconst TRACE_COLUMNS = [\n  'message_id',\n  'thread_id',\n  'from_address',\n  'to_addresses',\n  'cc_addresses',\n  'subject',\n  'email_date',\n  'body_text',\n  'snippet',\n  'has_attachments',\n  'gmail_link',\n  'search_query',\n  'search_after',\n  'search_before',\n  'review_mode',\n  'match_telemetria_pos',\n  'match_person_pos',\n  'match_person_keyword',\n  'match_telemetria_keyword',\n  'match_telemetria_excerpt',\n  'match_person_excerpt',\n  'match_in_field',\n  'trace_status',\n];\n\nconst out = [];\nfor (const item of $input.all()) {\n  const src = item.json || {};\n  if (!src.message_id) continue;\n\n  const row = {};\n  for (const col of TRACE_COLUMNS) {\n    if (src[col] !== undefined && src[col] !== null) {\n      row[col] = src[col];\n    }\n  }\n  row.message_id = src.message_id;\n  row.thread_id = src.thread_id || src.message_id;\n  row.trace_status = row.trace_status || 'active';\n  row.review_mode = row.review_mode || 'historical';\n  row.has_attachments = Boolean(row.has_attachments);\n\n  out.push({ json: row });\n}\n\nreturn out;\n"
       },
       "id": "node-prepare-trace",
       "name": "Preparar trazabilidad",
@@ -789,7 +851,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Registrar resumen del día histórico ─────────────────────────────────────\n// Consolida IDs del LOTE ACTUAL (Sector lote) y genera upsert en email_history_day.\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all() || []; } catch (e) { return []; }\n}\n\nfunction safeFirstJson(nodeName) {\n  try { return $(nodeName).first()?.json || null; } catch (e) { return null; }\n}\n\nfunction pgStr(v) {\n  return `'${String(v ?? '').replace(/'/g, \"''\")}'`;\n}\n\nfunction pgJson(arr) {\n  return `'${JSON.stringify(arr || [])}'::jsonb`;\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Configuración o Config histórico.');\n}\n\nfunction sectorMessageIds() {\n  const ids = new Set();\n  for (const item of safeAll('Sector lote')) {\n    if (item.json && item.json.id) ids.add(item.json.id);\n  }\n  if (!ids.size) {\n    for (const item of safeAll('Filtrar solo nuevos')) {\n      if (item.json && item.json.id) ids.add(item.json.id);\n    }\n  }\n  return ids;\n}\n\nconst cfg = getCfg();\nconst qinfoMain = safeFirstJson('Construir consulta Gmail') || {};\nconst filtrarRow = safeFirstJson('Filtrar solo nuevos') || safeFirstJson('Sector lote') || {};\nconst sectorRow = safeFirstJson('Sector lote') || {};\nconst sectorIds = sectorMessageIds();\n\nconst dayCtx =\n  filtrarRow._dayCtx ||\n  sectorRow._dayCtx ||\n  $input.first()?.json?._dayCtx ||\n  {\n    processDate: qinfoMain.processDate,\n    rangeStart: qinfoMain.rangeStart || cfg.startDate,\n    rangeEnd: qinfoMain.rangeEnd || cfg.endDate\n  };\n\nconst processDate = dayCtx.processDate || qinfoMain.processDate;\nif (!processDate) {\n  throw new Error('Registrar día histórico: falta processDate del día en curso.');\n}\n\nconst qinfo =\n  (() => {\n    try {\n      const j = $('Construir consulta Gmail').item?.json;\n      if (j && j.gmailQuery) return j;\n    } catch (e) { /* optional */ }\n    return qinfoMain;\n  })();\n\nconst listResp =\n  (() => {\n    try {\n      return $('Listar IDs Gmail').item?.json || safeFirstJson('Listar IDs Gmail') || {};\n    } catch (e) {\n      return safeFirstJson('Listar IDs Gmail') || {};\n    }\n  })();\n\nconst listedIds = Array.isArray(listResp.messages)\n  ? listResp.messages.map(m => m && m.id).filter(Boolean)\n  : [];\n\n// Solo IDs del lote actual (evita mezclar vueltas anteriores del bucle n8n)\nconst processedIds = safeAll('Normalizar correo')\n  .filter(i => i.json && i.json.message_id && sectorIds.has(i.json.message_id))\n  .map(i => i.json.message_id);\n\nconst matchIds = safeAll('Filtrar recibidos relevantes')\n  .filter(i => {\n    const j = i.json || {};\n    return j.message_id && !j._cerrarDiaHistorico && sectorIds.has(j.message_id);\n  })\n  .map(i => i.json.message_id);\n\nconst inputJson = $input.first()?.json || {};\nconst emptyMarker = inputJson._empty === true || inputJson._historicalEmptyDay === true;\nconst emptyReason = String(filtrarRow.reason || inputJson.reason || '');\n\nconst sector = sectorRow._sector || filtrarRow._sector || null;\n\nlet batchProcessed = processedIds;\nlet batchMatch = matchIds;\nlet statusHint = 'completed';\n\nif (emptyMarker && emptyReason === 'sin_correos_en_gmail') {\n  batchProcessed = [];\n  batchMatch = [];\n  statusHint = 'completed';\n} else if (emptyMarker && emptyReason === 'todos_ya_en_bd') {\n  batchProcessed = listedIds;\n  batchMatch = matchIds;\n  statusHint = 'completed';\n} else if (sectorIds.size > 0 && batchProcessed.length === 0) {\n  throw new Error(\n    `Registrar día ${processDate}: el lote tiene ${sectorIds.size} ID(s) en Sector lote ` +\n    'pero Normalizar no devolvió message_id. Revisa Leer Gmail antes de Guardar resumen.'\n  );\n} else if (sector && sector.remainingAfter > 0) {\n  statusHint = 'partial';\n} else if (listedIds.length > 0 && batchProcessed.length < listedIds.length) {\n  statusHint = 'partial';\n} else if (listedIds.length > 0) {\n  statusHint = 'completed';\n}\n\nconst row = {\n  analyzed_date: processDate,\n  range_start: dayCtx.rangeStart || cfg.startDate,\n  range_end: dayCtx.rangeEnd || cfg.endDate,\n  gmail_query: qinfo.gmailQuery || '',\n  emails_listed_count: listedIds.length,\n  emails_processed_count: batchProcessed.length,\n  emails_match_count: batchMatch.length,\n  message_ids_listed: listedIds,\n  message_ids_processed: batchProcessed,\n  message_ids_match: batchMatch,\n  status: statusHint,\n  empty_day: emptyMarker && emptyReason === 'sin_correos_en_gmail',\n  empty_reason: emptyReason,\n  sector: sector || null\n};\n\nconst mergeProcSql = `\n  SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)\n  FROM (\n    SELECT jsonb_array_elements_text(COALESCE(email_history_day.message_ids_processed, '[]'::jsonb)) AS elem\n    UNION ALL\n    SELECT jsonb_array_elements_text(EXCLUDED.message_ids_processed) AS elem\n  ) u\n`.trim();\n\nconst mergeMatchSql = `\n  SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)\n  FROM (\n    SELECT jsonb_array_elements_text(COALESCE(email_history_day.message_ids_match, '[]'::jsonb)) AS elem\n    UNION ALL\n    SELECT jsonb_array_elements_text(EXCLUDED.message_ids_match) AS elem\n  ) u\n`.trim();\n\nconst upsertSql = `\nINSERT INTO email_history_day (\n  analyzed_date, range_start, range_end, gmail_query,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  message_ids_listed, message_ids_processed, message_ids_match,\n  status, analyzed_at\n) VALUES (\n  ${pgStr(row.analyzed_date)}::date,\n  ${pgStr(row.range_start)}::date,\n  ${pgStr(row.range_end)}::date,\n  ${pgStr(row.gmail_query)},\n  ${row.emails_listed_count},\n  ${row.emails_processed_count},\n  ${row.emails_match_count},\n  ${pgJson(row.message_ids_listed)},\n  ${pgJson(row.message_ids_processed)},\n  ${pgJson(row.message_ids_match)},\n  ${pgStr(row.status)},\n  now()\n)\nON CONFLICT (analyzed_date) DO UPDATE SET\n  range_start = EXCLUDED.range_start,\n  range_end = EXCLUDED.range_end,\n  gmail_query = EXCLUDED.gmail_query,\n  emails_listed_count = EXCLUDED.emails_listed_count,\n  message_ids_listed = EXCLUDED.message_ids_listed,\n  message_ids_processed = (${mergeProcSql}),\n  message_ids_match = (${mergeMatchSql}),\n  emails_processed_count = jsonb_array_length((${mergeProcSql})),\n  emails_match_count = jsonb_array_length((${mergeMatchSql})),\n  status = CASE\n    WHEN EXCLUDED.emails_listed_count = 0 THEN 'completed'\n    WHEN jsonb_array_length((${mergeProcSql})) >= EXCLUDED.emails_listed_count THEN 'completed'\n    ELSE 'partial'\n  END,\n  analyzed_at = now()\nRETURNING analyzed_date::text AS analyzed_date,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  status,\n  message_ids_processed, message_ids_match;\n`.trim();\n\nreturn [{ json: { ...row, upsertSql } }];\n"
+        "jsCode": "// ── Registrar resumen del día histórico ─────────────────────────────────────\n// Consolida IDs del LOTE ACTUAL (Sector lote) y genera upsert en email_history_day.\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all() || []; } catch (e) { return []; }\n}\n\nfunction safeFirstJson(nodeName) {\n  try { return $(nodeName).first()?.json || null; } catch (e) { return null; }\n}\n\nfunction pgStr(v) {\n  return `'${String(v ?? '').replace(/'/g, \"''\")}'`;\n}\n\nfunction pgJson(arr) {\n  return `'${JSON.stringify(arr || [])}'::jsonb`;\n}\n\nfunction getCfg() {\n  for (const name of ['Config histórico API', 'Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Ejecuta Configuración o Config histórico.');\n}\n\nfunction sectorMessageIds() {\n  const ids = new Set();\n  for (const item of safeAll('Sector lote')) {\n    if (item.json && item.json.id) ids.add(item.json.id);\n  }\n  if (!ids.size) {\n    for (const item of safeAll('Filtrar solo nuevos')) {\n      if (item.json && item.json.id) ids.add(item.json.id);\n    }\n  }\n  return ids;\n}\n\nconst cfg = getCfg();\nconst qinfoMain = safeFirstJson('Construir consulta Gmail') || {};\nconst filtrarRow = safeFirstJson('Filtrar solo nuevos') || safeFirstJson('Sector lote') || {};\nconst sectorRow = safeFirstJson('Sector lote') || {};\nconst sectorIds = sectorMessageIds();\n\nconst dayCtx =\n  filtrarRow._dayCtx ||\n  sectorRow._dayCtx ||\n  $input.first()?.json?._dayCtx ||\n  {\n    processDate: qinfoMain.processDate,\n    rangeStart: qinfoMain.rangeStart || cfg.startDate,\n    rangeEnd: qinfoMain.rangeEnd || cfg.endDate\n  };\n\nconst processDate = dayCtx.processDate || qinfoMain.processDate;\nif (!processDate) {\n  throw new Error('Registrar día histórico: falta processDate del día en curso.');\n}\n\nconst qinfo =\n  (() => {\n    try {\n      const j = $('Construir consulta Gmail').item?.json;\n      if (j && j.gmailQuery) return j;\n    } catch (e) { /* optional */ }\n    return qinfoMain;\n  })();\n\nconst listResp =\n  (() => {\n    try {\n      return $('Listar IDs Gmail').item?.json || safeFirstJson('Listar IDs Gmail') || {};\n    } catch (e) {\n      return safeFirstJson('Listar IDs Gmail') || {};\n    }\n  })();\n\nconst listedIds = Array.isArray(listResp.messages)\n  ? listResp.messages.map(m => m && m.id).filter(Boolean)\n  : [];\n\n// Solo IDs del lote actual (evita mezclar vueltas anteriores del bucle n8n)\nconst processedIds = safeAll('Normalizar correo')\n  .filter(i => i.json && i.json.message_id && sectorIds.has(i.json.message_id))\n  .map(i => i.json.message_id);\n\nconst matchIds = safeAll('Filtrar recibidos relevantes')\n  .filter(i => {\n    const j = i.json || {};\n    if (j._cerrarDiaHistorico) return false;\n    const mid = j.message_id || j.id;\n    return mid && sectorIds.has(mid);\n  })\n  .map(i => i.json.message_id || i.json.id);\n\nconst inputJson = $input.first()?.json || {};\nconst emptyMarker = inputJson._empty === true || inputJson._historicalEmptyDay === true;\nconst emptyReason = String(filtrarRow.reason || inputJson.reason || '');\n\nconst sector = sectorRow._sector || filtrarRow._sector || null;\n\nlet batchProcessed = processedIds.length ? processedIds : [...sectorIds];\nlet batchMatch = matchIds;\nlet statusHint = 'completed';\n\nif (emptyMarker && emptyReason === 'sin_correos_en_gmail') {\n  batchProcessed = [];\n  batchMatch = [];\n  statusHint = 'completed';\n} else if (emptyMarker && emptyReason === 'todos_ya_en_bd') {\n  batchProcessed = listedIds.length ? listedIds : [...sectorIds];\n  batchMatch = matchIds;\n  statusHint = 'completed';\n} else if (sector && sector.remainingAfter > 0) {\n  statusHint = 'partial';\n} else if (listedIds.length > 0 && batchProcessed.length < listedIds.length) {\n  statusHint = 'partial';\n} else if (listedIds.length > 0) {\n  statusHint = 'completed';\n}\n\nconst row = {\n  analyzed_date: processDate,\n  range_start: dayCtx.rangeStart || cfg.startDate,\n  range_end: dayCtx.rangeEnd || cfg.endDate,\n  gmail_query: qinfo.gmailQuery || '',\n  emails_listed_count: listedIds.length,\n  emails_processed_count: batchProcessed.length,\n  emails_match_count: batchMatch.length,\n  message_ids_listed: listedIds,\n  message_ids_processed: batchProcessed,\n  message_ids_match: batchMatch,\n  status: statusHint,\n  empty_day: emptyMarker && emptyReason === 'sin_correos_en_gmail',\n  empty_reason: emptyReason,\n  sector: sector || null\n};\n\nconst mergeProcSql = `\n  SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)\n  FROM (\n    SELECT jsonb_array_elements_text(COALESCE(email_history_day.message_ids_processed, '[]'::jsonb)) AS elem\n    UNION ALL\n    SELECT jsonb_array_elements_text(EXCLUDED.message_ids_processed) AS elem\n  ) u\n`.trim();\n\nconst mergeMatchSql = `\n  SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)\n  FROM (\n    SELECT jsonb_array_elements_text(COALESCE(email_history_day.message_ids_match, '[]'::jsonb)) AS elem\n    UNION ALL\n    SELECT jsonb_array_elements_text(EXCLUDED.message_ids_match) AS elem\n  ) u\n`.trim();\n\nconst upsertSql = `\nINSERT INTO email_history_day (\n  analyzed_date, range_start, range_end, gmail_query,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  message_ids_listed, message_ids_processed, message_ids_match,\n  status, analyzed_at\n) VALUES (\n  ${pgStr(row.analyzed_date)}::date,\n  ${pgStr(row.range_start)}::date,\n  ${pgStr(row.range_end)}::date,\n  ${pgStr(row.gmail_query)},\n  ${row.emails_listed_count},\n  ${row.emails_processed_count},\n  ${row.emails_match_count},\n  ${pgJson(row.message_ids_listed)},\n  ${pgJson(row.message_ids_processed)},\n  ${pgJson(row.message_ids_match)},\n  ${pgStr(row.status)},\n  now()\n)\nON CONFLICT (analyzed_date) DO UPDATE SET\n  range_start = EXCLUDED.range_start,\n  range_end = EXCLUDED.range_end,\n  gmail_query = EXCLUDED.gmail_query,\n  emails_listed_count = EXCLUDED.emails_listed_count,\n  message_ids_listed = EXCLUDED.message_ids_listed,\n  message_ids_processed = (${mergeProcSql}),\n  message_ids_match = (${mergeMatchSql}),\n  emails_processed_count = jsonb_array_length((${mergeProcSql})),\n  emails_match_count = jsonb_array_length((${mergeMatchSql})),\n  status = CASE\n    WHEN EXCLUDED.emails_listed_count = 0 THEN 'completed'\n    WHEN jsonb_array_length((${mergeProcSql})) >= EXCLUDED.emails_listed_count THEN 'completed'\n    ELSE 'partial'\n  END,\n  analyzed_at = now()\nRETURNING analyzed_date::text AS analyzed_date,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  status,\n  message_ids_processed, message_ids_match;\n`.trim();\n\nreturn [{ json: { ...row, upsertSql } }];\n"
       },
       "id": "node-reg-day",
       "name": "Registrar día histórico",
@@ -799,6 +861,42 @@
         3560,
         480
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Registrar franja horaria live_today (email_history_slot) ────────────────\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all() || []; } catch (e) { return []; }\n}\n\nfunction safeFirstJson(nodeName) {\n  try { return $(nodeName).first()?.json || null; } catch (e) { return null; }\n}\n\nfunction pgStr(v) {\n  return `'${String(v ?? '').replace(/'/g, \"''\")}'`;\n}\n\nfunction pgJson(arr) {\n  return `'${JSON.stringify(arr || [])}'::jsonb`;\n}\n\nfunction getCfg() {\n  for (const name of ['Config live API', 'Config histórico API', 'Config histórico', 'Configuración']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j && (j.mode || j.startDate !== undefined)) return j;\n    } catch (e) {}\n  }\n  throw new Error('Config live/histórico requerido.');\n}\n\nfunction sectorMessageIds() {\n  const ids = new Set();\n  for (const item of safeAll('Sector lote')) {\n    if (item.json && item.json.id) ids.add(item.json.id);\n  }\n  return ids;\n}\n\nconst cfg = getCfg();\nif (String(cfg.mode || '').toLowerCase() !== 'live_today') {\n  return [{ json: { _skipSlotRegister: true } }];\n}\n\nconst qinfo = safeFirstJson('Construir consulta Gmail') || {};\nconst listResp = safeFirstJson('Listar IDs Gmail') || {};\nconst sectorIds = sectorMessageIds();\n\nconst processDate = String(cfg.processDate || qinfo.processDate || '').trim();\nconst slotIndex = Number(cfg.slotIndex ?? qinfo.slotIndex ?? 0);\nconst slotStartEpoch = Number(cfg.slotStartEpoch ?? qinfo.afterEpoch ?? 0);\nconst slotEndEpoch = Number(cfg.slotEndEpoch ?? qinfo.beforeEpoch ?? 0);\n\nif (!processDate) throw new Error('Registrar slot: falta processDate.');\n\nconst listedIds = Array.isArray(listResp.messages)\n  ? listResp.messages.map(m => m && m.id).filter(Boolean)\n  : [];\n\nconst processedIds = safeAll('Normalizar correo')\n  .filter(i => i.json && i.json.message_id && sectorIds.has(i.json.message_id))\n  .map(i => i.json.message_id);\n\nconst matchIds = safeAll('Filtrar recibidos relevantes')\n  .filter(i => {\n    const j = i.json || {};\n    return j.message_id && !j._cerrarDiaHistorico && sectorIds.has(j.message_id);\n  })\n  .map(i => i.json.message_id);\n\nconst sector = safeFirstJson('Sector lote')?._sector || null;\nlet statusHint = listedIds.length === 0 ? 'completed' : 'completed';\nif (sector && sector.remainingAfter > 0) statusHint = 'partial';\nelse if (listedIds.length > 0 && processedIds.length < listedIds.length) statusHint = 'partial';\n\nconst mergeProcSql = `\n  SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)\n  FROM (\n    SELECT jsonb_array_elements_text(COALESCE(email_history_slot.message_ids_processed, '[]'::jsonb)) AS elem\n    UNION ALL\n    SELECT jsonb_array_elements_text(EXCLUDED.message_ids_processed) AS elem\n  ) u\n`.trim();\n\nconst mergeMatchSql = `\n  SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)\n  FROM (\n    SELECT jsonb_array_elements_text(COALESCE(email_history_slot.message_ids_match, '[]'::jsonb)) AS elem\n    UNION ALL\n    SELECT jsonb_array_elements_text(EXCLUDED.message_ids_match) AS elem\n  ) u\n`.trim();\n\nconst upsertSql = `\nINSERT INTO email_history_slot (\n  analyzed_date, slot_index, slot_start, slot_end, gmail_query,\n  emails_listed_count, emails_processed_count, emails_match_count,\n  message_ids_processed, message_ids_match, status, analyzed_at\n) VALUES (\n  ${pgStr(processDate)}::date,\n  ${slotIndex},\n  to_timestamp(${slotStartEpoch}),\n  to_timestamp(${slotEndEpoch}),\n  ${pgStr(qinfo.gmailQuery || '')},\n  ${listedIds.length},\n  ${processedIds.length},\n  ${matchIds.length},\n  ${pgJson(processedIds)},\n  ${pgJson(matchIds)},\n  ${pgStr(statusHint)},\n  now()\n)\nON CONFLICT (analyzed_date, slot_index) DO UPDATE SET\n  gmail_query = EXCLUDED.gmail_query,\n  emails_listed_count = EXCLUDED.emails_listed_count,\n  message_ids_processed = (${mergeProcSql}),\n  message_ids_match = (${mergeMatchSql}),\n  emails_processed_count = jsonb_array_length((${mergeProcSql})),\n  emails_match_count = jsonb_array_length((${mergeMatchSql})),\n  status = CASE\n    WHEN EXCLUDED.emails_listed_count = 0 THEN 'completed'\n    WHEN jsonb_array_length((${mergeProcSql})) >= EXCLUDED.emails_listed_count THEN 'completed'\n    ELSE 'partial'\n  END,\n  analyzed_at = now()\nRETURNING analyzed_date::text, slot_index, status,\n  emails_listed_count, emails_processed_count, emails_match_count;\n`.trim();\n\nreturn [{\n  json: {\n    mode: 'live_today',\n    processDate,\n    slotIndex,\n    upsertSql,\n    status: statusHint,\n    emails_listed_count: listedIds.length,\n    emails_processed_count: processedIds.length,\n    emails_match_count: matchIds.length\n  }\n}];\n"
+      },
+      "id": "node-reg-slot",
+      "name": "Registrar slot live",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3780,
+        820
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.upsertSql }}",
+        "options": {
+          "alwaysOutputData": true
+        }
+      },
+      "id": "node-save-slot",
+      "name": "Guardar slot live",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        4000,
+        820
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REEMPLAZAR",
+          "name": "Postgres telemetria"
+        }
+      }
     },
     {
       "parameters": {
@@ -928,11 +1026,33 @@
         ]
       ]
     },
+    "Webhook live": {
+      "main": [
+        [
+          {
+            "node": "Config live API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Config histórico API": {
       "main": [
         [
           {
             "node": "Obtener días analizados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config live API": {
+      "main": [
+        [
+          {
+            "node": "Construir consulta Gmail",
             "type": "main",
             "index": 0
           }
@@ -1291,11 +1411,45 @@
       "main": [
         [
           {
+            "node": "¿Modo live?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Modo live?": {
+      "main": [
+        [
+          {
+            "node": "Registrar slot live",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Registrar día histórico",
             "type": "main",
             "index": 0
           }
         ]
+      ]
+    },
+    "Registrar slot live": {
+      "main": [
+        [
+          {
+            "node": "Guardar slot live",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar slot live": {
+      "main": [
+        []
       ]
     },
     "Registrar día histórico": {

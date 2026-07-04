@@ -121,9 +121,50 @@ export default function App({ page }: { page: Page }) {
       <section>
         <h1>Dashboard histórico</h1>
         <p className="muted">
-          Rango {dash.program_range_start} → {dash.program_range_end} ({dash.days_total}{" "}
-          días programados)
+          Rango histórico {dash.program_range_start} → {dash.program_range_end}
+          {dash.sync_end_dynamic ? " (fin = ayer, GMT-5)" : ""} · {dash.days_total} días
+          programados
         </p>
+
+        {dash.live_today?.enabled && (
+          <div className="card card-live">
+            <h2>Hoy en vivo — {dash.live_today.today_date}</h2>
+            <p className="muted">
+              Ciclo cada {Math.round(dash.live_today.interval_sec / 60)} min · franjas de{" "}
+              {dash.live_today.slot_minutes} min (America/Lima). Al cambiar el día, se archiva
+              en histórico.
+            </p>
+            <div className="progress progress-live">
+              <div style={{ width: `${dash.live_today.percent}%` }} />
+            </div>
+            <p>
+              <strong>Franjas:</strong> {dash.live_today.slots_completed} /{" "}
+              {dash.live_today.slots_total} ({dash.live_today.percent}%) ·{" "}
+              <strong>Correos listados:</strong> {dash.live_today.emails_listed} ·{" "}
+              <strong>Match:</strong> {dash.live_today.emails_match}
+            </p>
+            {dash.live_today.last_poll_at && (
+              <p className="muted">
+                Último ciclo live: {new Date(dash.live_today.last_poll_at).toLocaleString()}
+              </p>
+            )}
+            <div className="live-slots-grid">
+              {dash.live_today.slots.map((s) => (
+                <div
+                  key={s.slot_index}
+                  className={`live-slot live-slot-${s.status}`}
+                  title={`${s.label} — ${s.status}`}
+                >
+                  <span className="live-slot-label">{s.label}</span>
+                  <span className="live-slot-meta">
+                    {s.status === "completed" ? "✓" : s.status === "partial" ? "…" : "·"}
+                    {s.emails_match > 0 ? ` ${s.emails_match}m` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="card">
           <div className="progress">
@@ -355,8 +396,7 @@ export default function App({ page }: { page: Page }) {
         <h1>Planificación — días históricos</h1>
         <p className="muted">
           Datos de <code>email_history_day</code> + días pendientes (
-          {dash?.program_range_start ?? "2025-01-01"} →{" "}
-          {dash?.program_range_end ?? "2026-06-30"})
+          {dash?.program_range_start ?? "2025-01-01"} → {dash?.program_range_end ?? "—"})
         </p>
         <div className="toolbar toolbar-wrap">
           <label>
@@ -468,7 +508,7 @@ export default function App({ page }: { page: Page }) {
                 type="datetime-local"
                 value={traceDraftFrom}
                 min="2025-01-01T00:00"
-                max="2026-06-30T23:59"
+                max={`${dash?.program_range_end ?? "2099-12-31"}T23:59`}
                 onChange={(e) => setTraceDraftFrom(e.target.value)}
               />
             </label>
@@ -478,7 +518,7 @@ export default function App({ page }: { page: Page }) {
                 type="datetime-local"
                 value={traceDraftTo}
                 min={traceDraftFrom || "2025-01-01T00:00"}
-                max="2026-06-30T23:59"
+                max={`${dash?.program_range_end ?? "2099-12-31"}T23:59`}
                 onChange={(e) => setTraceDraftTo(e.target.value)}
               />
             </label>

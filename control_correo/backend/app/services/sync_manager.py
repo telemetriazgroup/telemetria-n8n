@@ -11,6 +11,7 @@ from app.database import (
     ControlState,
     DayProgress,
     count_completed,
+    count_scheduled_days,
     fetch_completed_dates,
     fetch_day_progress,
     first_incomplete_day_in_window,
@@ -81,9 +82,11 @@ def sync_n8n_execution_state_standalone(state: ControlState) -> None:
 
 
 def get_active_running_run(db: Session) -> ControlRun | None:
+    """Run histórico en curso (excluye seguimiento live_today)."""
     return (
         db.query(ControlRun)
         .filter(ControlRun.status == "running")
+        .filter(~ControlRun.note.ilike("%live_today%"))
         .order_by(ControlRun.started_at.desc())
         .first()
     )
@@ -198,7 +201,7 @@ def advance_window_after_success(db: Session, state: ControlState) -> None:
         completed=completed,
         current_start=state.current_window_start,
         current_end=state.current_window_end,
-        total_days=settings.total_program_days,
+        total_days=count_scheduled_days(db),
     )
     if plan.action == "done":
         state.current_window_start = None
@@ -285,7 +288,7 @@ def try_launch_next(db: Session, state: ControlState) -> ControlRun | None:
         completed=completed,
         current_start=state.current_window_start,
         current_end=state.current_window_end,
-        total_days=settings.total_program_days,
+        total_days=count_scheduled_days(db),
     )
 
     if plan.action == "done":

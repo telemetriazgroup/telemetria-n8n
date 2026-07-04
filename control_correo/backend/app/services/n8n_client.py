@@ -142,15 +142,54 @@ class N8nClient:
         )
         return result
 
-    def trigger_historical(self, start_date: str, end_date: str) -> Optional[str]:
-        """Dispara workflow vía webhook (preferido) o API run."""
-        payload = {
+    def trigger_historical(
+        self,
+        start_date: str,
+        end_date: str,
+        *,
+        slot_start_epoch: int | None = None,
+        slot_end_epoch: int | None = None,
+    ) -> Optional[str]:
+        """Dispara workflow histórico (ventana de días o franja horaria opcional)."""
+        payload: dict[str, Any] = {
             "mode": "historical",
             "startDate": start_date,
             "endDate": end_date,
             "batchSize": settings.n8n_batch_size,
+            "tzOffsetHours": -5,
         }
-        path = (settings.n8n_webhook_path or "historico-run").lstrip("/")
+        if slot_start_epoch is not None and slot_end_epoch is not None:
+            payload["slotStartEpoch"] = slot_start_epoch
+            payload["slotEndEpoch"] = slot_end_epoch
+        return self._trigger_webhook(settings.n8n_webhook_path, payload)
+
+    def trigger_live_slot(
+        self,
+        *,
+        process_date: str,
+        slot_index: int,
+        slot_start_epoch: int,
+        slot_end_epoch: int,
+        slot_label: str,
+    ) -> Optional[str]:
+        payload = {
+            "mode": "live_today",
+            "processDate": process_date,
+            "startDate": process_date,
+            "endDate": process_date,
+            "slotIndex": slot_index,
+            "slotStartEpoch": slot_start_epoch,
+            "slotEndEpoch": slot_end_epoch,
+            "slotLabel": slot_label,
+            "batchSize": settings.n8n_batch_size,
+            "tzOffsetHours": -5,
+            "reviewMode": "incremental",
+        }
+        return self._trigger_webhook(settings.n8n_webhook_live_path, payload)
+
+    def _trigger_webhook(self, path_setting: str, payload: dict[str, Any]) -> Optional[str]:
+        """Dispara workflow vía webhook (preferido) o API run."""
+        path = (path_setting or "historico-run").lstrip("/")
         url = f"/webhook/{path}"
         try:
             with self._client() as client:

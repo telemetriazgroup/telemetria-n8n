@@ -45,6 +45,9 @@ export type Dashboard = {
   batch_size: number;
   program_range_start: string;
   program_range_end: string;
+  sync_end_dynamic?: boolean;
+  yesterday_date?: string | null;
+  live_today?: LiveToday;
   poll_interval_sec: number;
   watchdog_interval_sec: number;
   exec_timeout_min: number;
@@ -90,6 +93,28 @@ export type TraceRow = {
   snippet?: string | null;
   gmail_link: string | null;
   reviewed_at?: string | null;
+};
+
+export type LiveSlot = {
+  slot_index: number;
+  label: string;
+  status: string;
+  emails_listed: number;
+  emails_match: number;
+};
+
+export type LiveToday = {
+  enabled: boolean;
+  today_date: string;
+  interval_sec: number;
+  slot_minutes: number;
+  slots_total: number;
+  slots_completed: number;
+  percent: number;
+  emails_listed: number;
+  emails_match: number;
+  last_poll_at: string | null;
+  slots: LiveSlot[];
 };
 
 export type TraceAttachment = {
@@ -175,7 +200,8 @@ export function clipDateRange(
   return f <= t ? { from: f, to: t } : { from: f, to: f };
 }
 
-export function yearDateRange(year: number, programEnd = "2026-06-30"): { from: string; to: string } {
+export function yearDateRange(year: number, programEnd?: string): { from: string; to: string } {
+  const end = programEnd || `${year}-12-31`;
   if (year === 2025) return { from: "2025-01-01", to: "2025-12-31" };
   return { from: "2026-01-01", to: programEnd };
 }

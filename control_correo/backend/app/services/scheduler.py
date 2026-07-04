@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal, get_or_create_state
+from app.services.live_sync import finalize_stale_live_runs, live_tick
 from app.services.sync_manager import (
     evaluate_active_run,
     get_active_running_run,
@@ -71,6 +72,21 @@ def watchdog_tick() -> None:
         db.close()
 
 
+def live_today_tick() -> None:
+    db: Session = SessionLocal()
+    try:
+        finalize_stale_live_runs(db)
+        msg = live_tick(db)
+        db.commit()
+        if msg and "lanzado" in msg:
+            logger.info("Live today: %s", msg)
+    except Exception:
+        logger.exception("Error en live_today_tick")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def start_scheduler() -> None:
     if not settings.scheduler_enabled:
         return
@@ -102,6 +118,21 @@ def start_scheduler() -> None:
         settings.control_exec_timeout_min,
         settings.n8n_batch_size,
     )
+
+    if settings.live_today_enabled:
+        live_interval = settings.live_today_interval_sec
+        scheduler.add_job(
+            live_today_tick,
+            "interval",
+            seconds=live_interval,
+            id="control_live_today",
+            replace_existing=True,
+        )
+        logger.info(
+            "Live today iniciado cada %s s — franjas de %s min (GMT-5)",
+            live_interval,
+            settings.live_slot_minutes,
+        )
 
 
 def stop_scheduler() -> None:

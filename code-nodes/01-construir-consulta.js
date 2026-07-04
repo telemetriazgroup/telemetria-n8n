@@ -49,14 +49,30 @@ function epochFromYmd(ymd) {
 let afterEpoch;
 let beforeEpoch;
 let processDate = null;
+let slotIndex = null;
 
-if (mode === 'historical') {
+if (mode === 'live_today') {
+  processDate = String(cfg.processDate || dayItem.processDate || '').trim();
+  slotIndex = Number(cfg.slotIndex ?? dayItem.slotIndex ?? 0);
+  afterEpoch = Number(cfg.slotStartEpoch ?? dayItem.slotStartEpoch ?? 0);
+  beforeEpoch = Number(cfg.slotEndEpoch ?? dayItem.slotEndEpoch ?? 0);
+  if (!processDate || !afterEpoch || !beforeEpoch) {
+    throw new Error('Modo live_today: processDate y franja horaria (epoch) requeridos.');
+  }
+} else if (mode === 'historical') {
   processDate = String(dayItem.processDate || '').trim();
   if (!processDate) {
     throw new Error('Modo historical: falta processDate (Planificar días pendientes).');
   }
-  afterEpoch = epochFromYmd(processDate);
-  beforeEpoch = afterEpoch + 86400;
+  const slotStart = Number(cfg.slotStartEpoch ?? dayItem.slotStartEpoch ?? 0);
+  const slotEnd = Number(cfg.slotEndEpoch ?? dayItem.slotEndEpoch ?? 0);
+  if (slotStart > 0 && slotEnd > slotStart) {
+    afterEpoch = slotStart;
+    beforeEpoch = slotEnd;
+  } else {
+    afterEpoch = epochFromYmd(processDate);
+    beforeEpoch = afterEpoch + 86400;
+  }
 } else if (mode === 'range') {
   if (!cfg.startDate || !cfg.endDate) {
     throw new Error('Modo "range": indica startDate y endDate (YYYY-MM-DD) en Configuración.');
@@ -95,8 +111,8 @@ if (cfg.receivedOnly !== false) {
   if (mailbox) q += ` -from:${mailbox}`;
 }
 
-// En historical: NO filtrar en Gmail — se listan todos los recibidos del día
-if (cfg.keywordFilterEnabled !== false && mode !== 'historical') {
+// En historical/live_today: NO filtrar en Gmail — se listan recibidos de la franja
+if (cfg.keywordFilterEnabled !== false && mode !== 'historical' && mode !== 'live_today') {
   const telemetriaKws = Array.isArray(cfg.telemetriaVariants) && cfg.telemetriaVariants.length
     ? cfg.telemetriaVariants
     : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'];
@@ -109,7 +125,21 @@ if (cfg.keywordFilterEnabled !== false && mode !== 'historical') {
 }
 
 let knownIdsQuery;
-if (mode === 'historical') {
+if (mode === 'live_today') {
+  const d = processDate.replace(/'/g, '');
+  const idx = Number(slotIndex ?? 0);
+  knownIdsQuery = `
+SELECT message_id FROM email_trace
+WHERE trace_status = 'active'
+  AND review_mode = 'incremental'
+  AND email_date >= to_timestamp(${afterEpoch}) AT TIME ZONE 'America/Lima'
+  AND email_date < to_timestamp(${beforeEpoch}) AT TIME ZONE 'America/Lima'
+UNION
+SELECT jsonb_array_elements_text(message_ids_processed) AS message_id
+FROM email_history_slot
+WHERE analyzed_date = '${d}'::date AND slot_index = ${idx}
+`.trim();
+} else if (mode === 'historical') {
   const d = processDate.replace(/'/g, '');
   // email_trace = solo matches; email_history_day.message_ids_processed = todos los leídos
   knownIdsQuery = `
@@ -133,8 +163,9 @@ WHERE analyzed_date = '${d}'::date
 return [{
   json: {
     gmailQuery: q,
-    reviewMode: mode,
+    reviewMode: mode === 'live_today' ? 'incremental' : mode,
     processDate,
+    slotIndex,
     knownIdsQuery,
     afterEpoch,
     beforeEpoch,
