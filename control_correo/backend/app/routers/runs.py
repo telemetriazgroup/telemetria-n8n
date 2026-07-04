@@ -6,10 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.database import (
     count_completed,
+    ensure_schedule_months,
     get_db,
     get_or_create_state,
     month_enabled,
     program_range,
+    view_range_end,
 )
 from app.schemas import N8nTestOut, RunOut
 from app.services.n8n_client import N8nClient
@@ -164,14 +166,23 @@ def trigger_manual(body: TriggerRequest, db: Session = Depends(get_db)) -> dict:
             f"{active.window_end}). Cancélala antes de lanzar otra.",
         )
 
-    prog_start, prog_end = program_range()
+    prog_start, _ = program_range()
+    view_end = view_range_end()
     start = body.start_date
-    end = body.end_date or min(start + timedelta(days=1), prog_end)
+    end = body.end_date or min(start + timedelta(days=1), view_end)
 
-    if start < prog_start or end > prog_end or start >= end:
-        raise HTTPException(400, f"Ventana inválida; rango permitido {prog_start}–{prog_end}")
+    if start < prog_start or end > view_end or start >= end:
+        raise HTTPException(
+            400,
+            f"Ventana inválida; rango permitido {prog_start}–{view_end}",
+        )
+
+    ensure_schedule_months(db, start, end)
     if not month_enabled(db, start) or not month_enabled(db, end):
-        raise HTTPException(400, "Mes no habilitado en el calendario de control")
+        raise HTTPException(
+            400,
+            "Mes deshabilitado manualmente en el calendario de control",
+        )
 
     if not _n8n.configured():
         raise HTTPException(503, "n8n no configurado (webhook o API key + workflow id)")

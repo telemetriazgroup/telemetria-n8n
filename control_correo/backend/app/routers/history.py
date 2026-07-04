@@ -5,7 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.database import get_db, month_enabled, program_range
+from app.database import (
+    ensure_schedule_months,
+    get_db,
+    history_range_end,
+    month_enabled,
+    program_range,
+)
 from app.schemas import HistoryDayOut, HistoryPlanDay, HistorySummaryMonth
 
 router = APIRouter(prefix="/api/v1/history", tags=["history"])
@@ -17,9 +23,10 @@ def list_days(
     date_to: Optional[date] = Query(None, alias="to"),
     db: Session = Depends(get_db),
 ) -> list[HistoryDayOut]:
-    start, end = program_range()
-    df = date_from or start
-    dt = date_to or end
+    start, _ = program_range()
+    hist_end = history_range_end()
+    df = max(date_from or start, start)
+    dt = date_to or hist_end
     rows = db.execute(
         text(
             """
@@ -43,9 +50,11 @@ def plan_days(
     db: Session = Depends(get_db),
 ) -> list[HistoryPlanDay]:
     """Todos los días programados en el rango, con estado desde email_history_day o pending."""
-    start, end = program_range()
-    df = date_from or start
-    dt = date_to or end
+    start, _ = program_range()
+    hist_end = history_range_end()
+    df = max(date_from or start, start)
+    dt = date_to or hist_end
+    ensure_schedule_months(db, df, dt)
     rows = db.execute(
         text(
             """
@@ -60,8 +69,8 @@ def plan_days(
     by_date = {r["analyzed_date"]: r for r in rows}
 
     out: list[HistoryPlanDay] = []
-    d = max(df, start)
-    last = min(dt, end)
+    d = df
+    last = dt
     while d <= last:
         if month_enabled(db, d):
             row = by_date.get(d)
@@ -113,7 +122,7 @@ def get_day(day: date, db: Session = Depends(get_db)) -> HistoryDayOut:
 
 @router.get("/summary", response_model=list[HistorySummaryMonth])
 def summary(
-    year: int = Query(..., ge=2020, le=2030),
+    year: int = Query(..., ge=2020, le=2100),
     db: Session = Depends(get_db),
 ) -> list[HistorySummaryMonth]:
     import calendar

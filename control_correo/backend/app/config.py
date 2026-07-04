@@ -8,9 +8,11 @@ class Settings(BaseSettings):
         "postgresql://telemetria_app:changeme@postgres-telemetria:5432/telemetria"
     )
 
-    # Histórico: inicio fijo (puede moverse más atrás vía env). Fin = ayer Lima (dinámico).
+    # Histórico automático: inicio fijo. Fin barrido auto = ayer Lima (dinámico).
     program_range_start: str = "2025-01-01"
     program_range_end_override: str = ""  # vacío → ayer America/Lima
+    # Manual / exploración UI: vacío → hoy Lima (sync manual) y fin año+2 (plan histórico).
+    program_view_end_override: str = ""
 
     control_poll_interval_sec: int = 600
     control_watchdog_interval_sec: int = 120

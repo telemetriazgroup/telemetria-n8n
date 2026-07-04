@@ -33,6 +33,8 @@ class DashboardOut(BaseModel):
     batch_size: int = 5
     program_range_start: date
     program_range_end: date
+    program_view_end: date
+    program_history_end: date
     poll_interval_sec: int
     watchdog_interval_sec: int
     exec_timeout_min: int

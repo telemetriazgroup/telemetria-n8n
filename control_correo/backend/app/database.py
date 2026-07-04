@@ -80,6 +80,7 @@ def parse_date(value: str | date) -> date:
 
 
 def program_range() -> tuple[date, date]:
+    """Rango del barrido automático (fin = ayer Lima salvo override)."""
     start = parse_date(settings.program_range_start)
     if settings.program_range_end_override.strip():
         end = parse_date(settings.program_range_end_override)
@@ -88,6 +89,21 @@ def program_range() -> tuple[date, date]:
     if end < start:
         end = start
     return start, end
+
+
+def view_range_end() -> date:
+    """Tope para sincronización manual (hoy Lima por defecto)."""
+    if settings.program_view_end_override.strip():
+        return parse_date(settings.program_view_end_override)
+    return today_lima()
+
+
+def history_range_end() -> date:
+    """Tope para explorar días históricos en la UI (sin límite práctico)."""
+    if settings.program_view_end_override.strip():
+        return parse_date(settings.program_view_end_override)
+    t = today_lima()
+    return date(t.year + 2, 12, 31)
 
 
 def ensure_schedule_months(db: Session, start: date, end: date) -> None:
@@ -247,6 +263,8 @@ def first_incomplete_day_in_window(
 
 
 def month_enabled(db: Session, d: date) -> bool:
+    """True salvo que el mes exista y esté deshabilitado explícitamente en la UI."""
+    ensure_schedule_months(db, date(d.year, d.month, 1), date(d.year, d.month, 1))
     row = db.execute(
         text(
             """
@@ -256,7 +274,7 @@ def month_enabled(db: Session, d: date) -> bool:
         ),
         {"y": d.year, "m": d.month},
     ).fetchone()
-    return bool(row.enabled) if row else False
+    return bool(row.enabled) if row else True
 
 
 def get_or_create_state(db: Session) -> ControlState:

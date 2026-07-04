@@ -16,8 +16,10 @@ from app.database import (
     first_incomplete_day_in_window,
     get_db,
     get_or_create_state,
+    history_range_end,
     program_range,
     sum_match_emails,
+    view_range_end,
 )
 from app.schemas import DashboardOut, LiveSlotOut, LiveTodayOut
 from app.services.dates import today_lima, yesterday_lima
@@ -123,6 +125,8 @@ def dashboard(db: Session = Depends(get_db)) -> DashboardOut:
         batch_size=settings.n8n_batch_size,
         program_range_start=start,
         program_range_end=end,
+        program_view_end=view_range_end(),
+        program_history_end=history_range_end(),
         poll_interval_sec=settings.control_poll_interval_sec,
         watchdog_interval_sec=settings.control_watchdog_interval_sec,
         exec_timeout_min=settings.control_exec_timeout_min,

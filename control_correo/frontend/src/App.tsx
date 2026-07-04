@@ -9,10 +9,10 @@ import {
   TraceRow,
   actionLabel,
   addDays,
-  clipDateRange,
   datetimeLocalToIso,
   fetchJson,
   formatDateTime,
+  historyYearOptions,
   monthDateRange,
   MONTH_LABELS,
   postJson,
@@ -56,13 +56,12 @@ export default function App({ page }: { page: Page }) {
       const d = await fetchJson<Dashboard>("/dashboard");
       setDash(d);
       const progStart = d.program_range_start;
-      const progEnd = d.program_range_end;
       const raw =
         historyMonth === 0
-          ? yearDateRange(historyYear, progEnd)
+          ? yearDateRange(historyYear)
           : monthDateRange(historyYear, historyMonth);
-      const { from, to } = clipDateRange(raw.from, raw.to, progStart, progEnd);
-      setDays(await fetchJson<HistoryDay[]>(`/history/plan?from=${from}&to=${to}`));
+      const from = raw.from < progStart ? progStart : raw.from;
+      setDays(await fetchJson<HistoryDay[]>(`/history/plan?from=${from}&to=${raw.to}`));
     } else if (page === "trace") {
       if (traceRangeActive && traceFromDt && traceToDt) {
         const fromDt = encodeURIComponent(datetimeLocalToIso(traceFromDt));
@@ -121,9 +120,10 @@ export default function App({ page }: { page: Page }) {
       <section>
         <h1>Dashboard histórico</h1>
         <p className="muted">
-          Rango histórico {dash.program_range_start} → {dash.program_range_end}
-          {dash.sync_end_dynamic ? " (fin = ayer, GMT-5)" : ""} · {dash.days_total} días
-          programados
+          Barrido automático hasta {dash.program_range_end}
+          {dash.sync_end_dynamic ? " (ayer, GMT-5)" : ""} · exploración hasta{" "}
+          {dash.program_history_end ?? dash.program_view_end ?? dash.program_range_end} ·{" "}
+          {dash.days_total} días programados (auto)
         </p>
 
         {dash.live_today?.enabled && (
@@ -341,7 +341,7 @@ export default function App({ page }: { page: Page }) {
                   type="date"
                   value={manualStart}
                   min={dash.program_range_start}
-                  max={dash.program_range_end}
+                  max={dash.program_view_end ?? dash.program_range_end}
                   onChange={(e) => onManualStartChange(e.target.value)}
                 />
               </label>
@@ -351,7 +351,7 @@ export default function App({ page }: { page: Page }) {
                   type="date"
                   value={manualEnd}
                   min={manualStart || dash.program_range_start}
-                  max={dash.program_range_end}
+                  max={dash.program_view_end ?? dash.program_range_end}
                   onChange={(e) => setManualEnd(e.target.value)}
                 />
               </label>
@@ -390,13 +390,18 @@ export default function App({ page }: { page: Page }) {
     const partialCount = days.filter((d) => d.status === "partial").length;
     const monthLabel =
       MONTH_LABELS.find((m) => m.value === historyMonth)?.label ?? "Todos los meses";
+    const historyYears = historyYearOptions(
+      dash?.program_range_start ?? "2025-01-01",
+      dash?.program_history_end ?? dash?.program_view_end
+    );
 
     return (
       <section>
         <h1>Planificación — días históricos</h1>
         <p className="muted">
           Datos de <code>email_history_day</code> + días pendientes (
-          {dash?.program_range_start ?? "2025-01-01"} → {dash?.program_range_end ?? "—"})
+          {dash?.program_range_start ?? "2025-01-01"} →{" "}
+          {dash?.program_history_end ?? dash?.program_view_end ?? dash?.program_range_end ?? "—"})
         </p>
         <div className="toolbar toolbar-wrap">
           <label>
@@ -405,8 +410,11 @@ export default function App({ page }: { page: Page }) {
               value={historyYear}
               onChange={(e) => setHistoryYear(Number(e.target.value))}
             >
-              <option value={2025}>2025</option>
-              <option value={2026}>2026 (ene–jun)</option>
+              {historyYears.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
             </select>
           </label>
           <label>
@@ -508,7 +516,7 @@ export default function App({ page }: { page: Page }) {
                 type="datetime-local"
                 value={traceDraftFrom}
                 min="2025-01-01T00:00"
-                max={`${dash?.program_range_end ?? "2099-12-31"}T23:59`}
+                max={`${dash?.program_history_end ?? dash?.program_view_end ?? "2099-12-31"}T23:59`}
                 onChange={(e) => setTraceDraftFrom(e.target.value)}
               />
             </label>
@@ -518,7 +526,7 @@ export default function App({ page }: { page: Page }) {
                 type="datetime-local"
                 value={traceDraftTo}
                 min={traceDraftFrom || "2025-01-01T00:00"}
-                max={`${dash?.program_range_end ?? "2099-12-31"}T23:59`}
+                max={`${dash?.program_history_end ?? dash?.program_view_end ?? "2099-12-31"}T23:59`}
                 onChange={(e) => setTraceDraftTo(e.target.value)}
               />
             </label>

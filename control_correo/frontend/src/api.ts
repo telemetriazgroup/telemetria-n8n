@@ -45,6 +45,8 @@ export type Dashboard = {
   batch_size: number;
   program_range_start: string;
   program_range_end: string;
+  program_view_end?: string;
+  program_history_end?: string;
   sync_end_dynamic?: boolean;
   yesterday_date?: string | null;
   live_today?: LiveToday;
@@ -200,10 +202,21 @@ export function clipDateRange(
   return f <= t ? { from: f, to: t } : { from: f, to: f };
 }
 
-export function yearDateRange(year: number, programEnd?: string): { from: string; to: string } {
-  const end = programEnd || `${year}-12-31`;
-  if (year === 2025) return { from: "2025-01-01", to: "2025-12-31" };
-  return { from: "2026-01-01", to: programEnd };
+export function yearDateRange(year: number): { from: string; to: string } {
+  return { from: `${year}-01-01`, to: `${year}-12-31` };
+}
+
+export function historyYearOptions(
+  rangeStart: string,
+  historyEnd?: string
+): number[] {
+  const startYear = Number.parseInt(rangeStart.slice(0, 4), 10);
+  const endYear = historyEnd
+    ? Number.parseInt(historyEnd.slice(0, 4), 10)
+    : new Date().getFullYear() + 2;
+  const years: number[] = [];
+  for (let y = startYear; y <= endYear; y += 1) years.push(y);
+  return years;
 }
 
 export function monthDateRange(year: number, month: number): { from: string; to: string } {
