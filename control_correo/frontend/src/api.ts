@@ -125,6 +125,7 @@ export type LiveSlot = {
   label: string;
   status: string;
   emails_listed: number;
+  emails_processed: number;
   emails_match: number;
 };
 

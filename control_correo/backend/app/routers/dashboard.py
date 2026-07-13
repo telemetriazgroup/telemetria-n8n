@@ -12,7 +12,6 @@ from app.database import (
     ensure_schedule_months,
     fetch_completed_dates,
     fetch_day_progress,
-    fetch_live_slots,
     first_incomplete_day_in_window,
     get_db,
     get_or_create_state,
@@ -23,7 +22,7 @@ from app.database import (
 )
 from app.schemas import DashboardOut, LiveSlotOut, LiveTodayOut
 from app.services.dates import today_lima, yesterday_lima
-from app.services.live_planner import build_slots_for_day, live_day_summary
+from app.services.live_planner import build_live_slot_views, live_day_summary
 from app.services.n8n_client import N8nClient
 from app.services.planner import decide_window
 from app.services.sync_manager import get_active_running_run
@@ -82,19 +81,10 @@ def dashboard(db: Session = Depends(get_db)) -> DashboardOut:
 
     today = today_lima()
     live_summary = live_day_summary(db, today)
-    live_slots_db = {s["slot_index"]: s for s in fetch_live_slots(db, today)}
-    live_slots: list[LiveSlotOut] = []
-    for slot in build_slots_for_day(today):
-        row = live_slots_db.get(slot.slot_index)
-        live_slots.append(
-            LiveSlotOut(
-                slot_index=slot.slot_index,
-                label=slot.label,
-                status=row["status"] if row else "pending",
-                emails_listed=row["emails_listed_count"] if row else 0,
-                emails_match=row["emails_match_count"] if row else 0,
-            )
-        )
+    live_slots = [
+        LiveSlotOut(**view)
+        for view in build_live_slot_views(db, today)
+    ]
 
     return DashboardOut(
         days_completed=done,
@@ -150,7 +140,7 @@ def dashboard(db: Session = Depends(get_db)) -> DashboardOut:
             last_poll_at=state.live_last_poll_at,
             slots=live_slots,
         ),
-        historical_auto_sync_enabled=settings.historical_auto_sync_enabled,
+        historical_auto_sync_enabled=state.historical_auto_sync_enabled,
     )
 
 
@@ -159,19 +149,7 @@ def live_today_status(db: Session = Depends(get_db)) -> LiveTodayOut:
     state = get_or_create_state(db)
     today = today_lima()
     summary = live_day_summary(db, today)
-    live_slots_db = {s["slot_index"]: s for s in fetch_live_slots(db, today)}
-    slots = []
-    for slot in build_slots_for_day(today):
-        row = live_slots_db.get(slot.slot_index)
-        slots.append(
-            LiveSlotOut(
-                slot_index=slot.slot_index,
-                label=slot.label,
-                status=row["status"] if row else "pending",
-                emails_listed=row["emails_listed_count"] if row else 0,
-                emails_match=row["emails_match_count"] if row else 0,
-            )
-        )
+    slots = [LiveSlotOut(**view) for view in build_live_slot_views(db, today)]
     return LiveTodayOut(
         enabled=settings.live_today_enabled,
         today_date=today,

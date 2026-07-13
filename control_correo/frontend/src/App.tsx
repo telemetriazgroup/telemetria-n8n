@@ -143,6 +143,43 @@ export default function App({ page }: { page: Page }) {
           {dash.days_total} días programados (auto)
         </p>
 
+        <div className="card card-secondary">
+          <h2>Barrido histórico automático</h2>
+          <p className="muted">
+            Recorre solo los días pendientes hasta {dash.program_range_end}
+            {dash.sync_end_dynamic ? " (ayer Lima)" : ""}. El watchdog revisa cada{" "}
+            {pollMin} min si hay que lanzar el siguiente día.
+          </p>
+          <label className="checkbox-row toggle-row">
+            <input
+              type="checkbox"
+              checked={dash.historical_auto_sync_enabled}
+              disabled={busy}
+              onChange={(e) =>
+                runAction(async () =>
+                  postJson("/runs/historical-auto", { enabled: e.target.checked })
+                )
+              }
+            />
+            Activar recorrido automático de días históricos faltantes
+          </label>
+          {dash.historical_auto_sync_enabled ? (
+            <p>
+              Estado:{" "}
+              <span className={dash.paused ? "status-warn" : "status-ok"}>
+                {dash.paused ? "Pausado — no avanza hasta reanudar" : "En marcha"}
+              </span>
+              {dash.scheduler_enabled
+                ? ` · watchdog cada ${pollMin} min`
+                : " · scheduler desactivado en servidor"}
+            </p>
+          ) : (
+            <p className="muted">
+              Modo manual: tú eliges las fechas en «Sincronización manual» más abajo.
+            </p>
+          )}
+        </div>
+
         {dash.live_today?.enabled && (
           <div className="card card-live">
             <h2>Hoy en vivo — {dash.live_today.today_date}</h2>
@@ -172,12 +209,11 @@ export default function App({ page }: { page: Page }) {
                 <div
                   key={s.slot_index}
                   className={`live-slot live-slot-${s.status}`}
-                  title={`${s.label} — ${s.status}`}
+                  title={`${s.label} — ${s.status} · match/procesados · listados ${s.emails_listed}`}
                 >
                   <span className="live-slot-label">{s.label}</span>
-                  <span className="live-slot-meta">
-                    {s.status === "completed" ? "✓" : s.status === "partial" ? "…" : "·"}
-                    {s.emails_match > 0 ? ` ${s.emails_match}m` : ""}
+                  <span className="live-slot-meta live-slot-ratio">
+                    {s.emails_match}/{s.emails_processed}
                   </span>
                 </div>
               ))}
@@ -230,7 +266,7 @@ export default function App({ page }: { page: Page }) {
           </p>
           <p className="muted">
             Sectores de <strong>{dash.batch_size}</strong> correos por vuelta del bucle n8n.
-            El histórico no avanza solo salvo que actives AUTO; el live sigue según la hora Lima.
+            El live de hoy sigue automático según la hora Lima.
           </p>
           {dash.last_poll_at && (
             <p className="muted">
@@ -274,7 +310,7 @@ export default function App({ page }: { page: Page }) {
                   disabled={busy}
                   onClick={() => runAction(async () => postJson("/runs/resume"))}
                 >
-                  Activar barrido auto
+                  Reanudar barrido
                 </button>
               ) : (
                 <button
@@ -283,7 +319,7 @@ export default function App({ page }: { page: Page }) {
                   disabled={busy}
                   onClick={() => runAction(async () => postJson("/runs/pause"))}
                 >
-                  Pausar barrido auto
+                  Pausar barrido
                 </button>
               ))}
             {(dash.n8n_running_count > 0 || dash.active_n8n_execution_id) && (

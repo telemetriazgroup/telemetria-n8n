@@ -17,6 +17,7 @@ COPY migrations/09-email-history-slot.sql /app/migrations/09-email-history-slot.
 COPY migrations/10-open-calendar.sql /app/migrations/10-open-calendar.sql
 COPY migrations/11-correos-procesados.sql /app/migrations/11-correos-procesados.sql
 COPY migrations/12-match-config.sql /app/migrations/12-match-config.sql
+COPY migrations/13-historical-auto-sync-state.sql /app/migrations/13-historical-auto-sync-state.sql
 
 COPY app ./app
 

@@ -63,6 +63,7 @@ class ControlState(Base):
     live_today_date = Column(Date)
     live_last_slot_index = Column(SmallInteger)
     live_last_poll_at = Column(DateTime(timezone=True))
+    historical_auto_sync_enabled = Column(Boolean, nullable=False, default=False)
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -287,6 +288,7 @@ def get_or_create_state(db: Session) -> ControlState:
         paused=False,
         program_range_start=start,
         program_range_end=end,
+        historical_auto_sync_enabled=settings.historical_auto_sync_enabled,
     )
     db.add(state)
     db.commit()

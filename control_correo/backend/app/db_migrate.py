@@ -148,3 +148,6 @@ def ensure_control_schema() -> None:
 
         _apply_sql_file(conn, "12-match-config.sql")
         logger.debug("Config match verificada")
+
+        _apply_sql_file(conn, "13-historical-auto-sync-state.sql")
+        logger.debug("Histórico auto en control_state verificado")

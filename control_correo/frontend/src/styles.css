@@ -82,8 +82,27 @@ main {
 }
 
 .live-slot-meta {
+  display: block;
   color: #9aa4b2;
   font-size: 0.68rem;
+}
+
+.live-slot-ratio {
+  font-weight: 600;
+  color: #e8eaed;
+  font-size: 0.72rem;
+}
+
+.live-slot-pending .live-slot-ratio {
+  color: #6e7681;
+}
+
+.live-slot-partial .live-slot-ratio {
+  color: #d29922;
+}
+
+.live-slot-completed .live-slot-ratio {
+  color: #7ee787;
 }
 
 .card {
@@ -692,9 +711,14 @@ code {
   gap: 0.5rem;
 }
 
-.checkbox-row input {
-  width: auto;
-  margin: 0;
+.toggle-row {
+  margin: 0.75rem 0 0.5rem;
+  font-weight: 500;
+}
+
+.toggle-row input {
+  width: 1.1rem;
+  height: 1.1rem;
 }
 
 .error-banner {

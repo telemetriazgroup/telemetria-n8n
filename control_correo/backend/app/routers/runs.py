@@ -36,6 +36,10 @@ class TriggerRequest(BaseModel):
     end_date: date | None = None
 
 
+class HistoricalAutoRequest(BaseModel):
+    enabled: bool
+
+
 def _window_for_log(state, db: Session) -> tuple[date, date]:
     start, end = program_range()
     ws = state.current_window_start or start
@@ -119,6 +123,8 @@ def test_n8n(db: Session = Depends(get_db)) -> N8nTestOut:
 @router.post("/pause")
 def pause(db: Session = Depends(get_db)) -> dict:
     state = get_or_create_state(db)
+    if not state.historical_auto_sync_enabled:
+        raise HTTPException(400, "Activa primero el modo histórico automático")
     ws, we = _window_for_log(state, db)
     state.paused = True
     log_control_event(
@@ -136,6 +142,8 @@ def pause(db: Session = Depends(get_db)) -> dict:
 @router.post("/resume")
 def resume(db: Session = Depends(get_db)) -> dict:
     state = get_or_create_state(db)
+    if not state.historical_auto_sync_enabled:
+        raise HTTPException(400, "Activa primero el modo histórico automático")
     ws, we = _window_for_log(state, db)
     state.paused = False
     log_control_event(
@@ -150,10 +158,52 @@ def resume(db: Session = Depends(get_db)) -> dict:
     return {"paused": False}
 
 
+@router.post("/historical-auto")
+def set_historical_auto(
+    body: HistoricalAutoRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Activa o desactiva el barrido automático de días históricos pendientes."""
+    state = get_or_create_state(db)
+    ws, we = _window_for_log(state, db)
+    state.historical_auto_sync_enabled = body.enabled
+    launched = False
+
+    if body.enabled:
+        state.paused = False
+        log_control_event(
+            db,
+            action="launch",
+            status="completed",
+            note="Modo histórico automático activado desde dashboard",
+            window_start=ws,
+            window_end=we,
+        )
+        if not get_active_running_run(db):
+            launched = try_launch_next(db, state) is not None
+    else:
+        state.paused = True
+        log_control_event(
+            db,
+            action="stop",
+            status="completed",
+            note="Modo histórico automático desactivado — solo lanzamientos manuales",
+            window_start=ws,
+            window_end=we,
+        )
+
+    db.commit()
+    return {
+        "historical_auto_sync_enabled": state.historical_auto_sync_enabled,
+        "paused": state.paused,
+        "launched": launched,
+    }
+
+
 @router.post("/trigger")
 def trigger_manual(body: TriggerRequest, db: Session = Depends(get_db)) -> dict:
     state = get_or_create_state(db)
-    if settings.historical_auto_sync_enabled and not state.paused:
+    if state.historical_auto_sync_enabled and not state.paused:
         raise HTTPException(
             400,
             "Pausa el barrido automático histórico antes de lanzar fechas manuales",
@@ -250,7 +300,7 @@ def reconcile_runs(db: Session = Depends(get_db)) -> dict:
     fixed = reconcile_orphan_runs(db)
     result = evaluate_active_run(db, state)
     launched = False
-    if not state.paused and settings.historical_auto_sync_enabled:
+    if not state.paused and state.historical_auto_sync_enabled:
         if result == "completed":
             launched = try_launch_next(db, state) is not None
         elif result == "timeout":

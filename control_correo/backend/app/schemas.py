@@ -50,6 +50,7 @@ class LiveSlotOut(BaseModel):
     label: str
     status: str
     emails_listed: int = 0
+    emails_processed: int = 0
     emails_match: int = 0
 
 
