@@ -95,10 +95,12 @@ def start_scheduler() -> None:
         return
 
     db = SessionLocal()
+    historical_auto = False
     try:
         state = get_or_create_state(db)
+        historical_auto = bool(state.historical_auto_sync_enabled)
         n = reconcile_orphan_runs(db)
-        if not state.paused and state.historical_auto_sync_enabled:
+        if not state.paused and historical_auto:
             try_launch_next(db, state)
         db.commit()
         if n:
@@ -118,7 +120,7 @@ def start_scheduler() -> None:
     logger.info(
         "Watchdog iniciado cada %s s — histórico auto=%s (timeout %s min, batch %s)",
         interval,
-        state.historical_auto_sync_enabled,
+        historical_auto,
         settings.control_exec_timeout_min,
         settings.n8n_batch_size,
     )
