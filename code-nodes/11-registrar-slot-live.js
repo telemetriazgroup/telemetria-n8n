@@ -66,9 +66,23 @@ const matchIds = safeAll('Filtrar recibidos relevantes')
   .map(i => i.json.message_id);
 
 const sector = safeFirstJson('Sector lote')?._sector || null;
+const loteRow = safeFirstJson('Pasar a registrar') || {};
+const loteListo = Boolean(loteRow._loteListo);
+const normalizedCount = Number(loteRow.normalizedCount || 0);
+const sectorCount = Number(sector?.sectorCount || sectorIds.size || 0);
+
+let batchProcessed;
+if (loteListo && sectorCount > 0 && normalizedCount >= sectorCount && sectorIds.size) {
+  batchProcessed = [...sectorIds];
+} else if (processedIds.length) {
+  batchProcessed = processedIds;
+} else {
+  batchProcessed = [...sectorIds];
+}
+
 let statusHint = listedIds.length === 0 ? 'completed' : 'completed';
 if (sector && sector.remainingAfter > 0) statusHint = 'partial';
-else if (listedIds.length > 0 && processedIds.length < listedIds.length) statusHint = 'partial';
+else if (listedIds.length > 0 && batchProcessed.length < listedIds.length) statusHint = 'partial';
 
 const mergeProcSql = `
   SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)
@@ -100,9 +114,9 @@ INSERT INTO email_history_slot (
   to_timestamp(${slotEndEpoch}),
   ${pgStr(qinfo.gmailQuery || '')},
   ${listedIds.length},
-  ${processedIds.length},
+  ${batchProcessed.length},
   ${matchIds.length},
-  ${pgJson(processedIds)},
+  ${pgJson(batchProcessed)},
   ${pgJson(matchIds)},
   ${pgStr(statusHint)},
   now()
@@ -132,7 +146,7 @@ return [{
     upsertSql,
     status: statusHint,
     emails_listed_count: listedIds.length,
-    emails_processed_count: processedIds.length,
+    emails_processed_count: batchProcessed.length,
     emails_match_count: matchIds.length
   }
 }];

@@ -16,6 +16,8 @@ class Settings(BaseSettings):
 
     control_poll_interval_sec: int = 600
     control_watchdog_interval_sec: int = 120
+    # Sin avance en la ventana de 2 días → reinicio del mismo par (no entre lotes de 5).
+    control_stall_timeout_min: int = 10
     control_exec_timeout_min: int = 90
     scheduler_enabled: bool = True
     # Barrido histórico automático (watchdog). False = solo manual por el usuario.

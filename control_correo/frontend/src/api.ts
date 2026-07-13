@@ -74,6 +74,7 @@ export type Dashboard = {
   live_today?: LiveToday;
   poll_interval_sec: number;
   watchdog_interval_sec: number;
+  stall_timeout_min: number;
   exec_timeout_min: number;
   scheduler_enabled: boolean;
   historical_auto_sync_enabled?: boolean;

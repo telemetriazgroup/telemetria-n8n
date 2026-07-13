@@ -147,8 +147,9 @@ export default function App({ page }: { page: Page }) {
           <h2>Barrido histórico automático</h2>
           <p className="muted">
             Recorre solo los días pendientes hasta {dash.program_range_end}
-            {dash.sync_end_dynamic ? " (ayer Lima)" : ""}. El watchdog revisa cada{" "}
-            {pollMin} min si hay que lanzar el siguiente día.
+            {dash.sync_end_dynamic ? " (ayer Lima)" : ""}. Ventanas de <strong>2 días</strong>;
+            el watchdog revisa cada {pollMin} min y solo reinicia el par si lleva{" "}
+            {dash.stall_timeout_min} min sin avance en BD.
           </p>
           <label className="checkbox-row toggle-row">
             <input

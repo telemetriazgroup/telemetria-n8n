@@ -103,8 +103,22 @@ const emptyMarker = inputJson._empty === true || inputJson._historicalEmptyDay =
 const emptyReason = String(filtrarRow.reason || inputJson.reason || '');
 
 const sector = sectorRow._sector || filtrarRow._sector || null;
+const loteRow = safeFirstJson('Pasar a registrar') || inputJson;
+const loteListo = Boolean(loteRow._loteListo);
+const normalizedCount = Number(loteRow.normalizedCount || 0);
+const sectorCount = Number(sector?.sectorCount || sectorIds.size || 0);
 
-let batchProcessed = processedIds.length ? processedIds : [...sectorIds];
+// Normalizar.all() en este nodo suele ver 1 item (contexto n8n por ítem); si Pasar
+// confirmó el lote completo, consolidar todos los IDs del sector.
+let batchProcessed;
+if (loteListo && sectorCount > 0 && normalizedCount >= sectorCount && sectorIds.size) {
+  batchProcessed = [...sectorIds];
+} else if (processedIds.length) {
+  batchProcessed = processedIds;
+} else {
+  batchProcessed = [...sectorIds];
+}
+
 let batchMatch = matchIds;
 let statusHint = 'completed';
 

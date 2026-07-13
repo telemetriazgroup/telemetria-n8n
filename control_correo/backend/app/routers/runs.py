@@ -303,7 +303,7 @@ def reconcile_runs(db: Session = Depends(get_db)) -> dict:
     if not state.paused and state.historical_auto_sync_enabled:
         if result == "completed":
             launched = try_launch_next(db, state) is not None
-        elif result == "batch_partial":
+        elif result == "stall_retry":
             launched = True
         elif result == "timeout":
             ws, we = state.current_window_start, state.current_window_end

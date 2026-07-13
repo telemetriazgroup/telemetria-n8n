@@ -123,6 +123,7 @@ def dashboard(db: Session = Depends(get_db)) -> DashboardOut:
         program_history_end=history_range_end(),
         poll_interval_sec=settings.control_poll_interval_sec,
         watchdog_interval_sec=settings.control_watchdog_interval_sec,
+        stall_timeout_min=settings.control_stall_timeout_min,
         exec_timeout_min=settings.control_exec_timeout_min,
         scheduler_enabled=settings.scheduler_enabled,
         sync_end_dynamic=True,

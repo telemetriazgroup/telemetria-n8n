@@ -1,4 +1,4 @@
-"""Watchdog cada 2 min: comprueba si el lote/día terminó y registra ciclos parciales."""
+"""Watchdog cada 2 min: comprueba si el par de 2 días terminó; reinicia solo tras estancamiento."""
 
 import logging
 
@@ -47,8 +47,8 @@ def watchdog_tick() -> None:
                 logger.info("Watchdog: siguiente ventana tras completar")
             return
 
-        if result == "batch_partial":
-            logger.info("Watchdog: continuación de lote parcial ya lanzada")
+        if result == "stall_retry":
+            logger.info("Watchdog: reinicio de ventana tras estancamiento ya lanzado")
             return
 
         if result == "timeout":
@@ -122,9 +122,10 @@ def start_scheduler() -> None:
     )
     scheduler.start()
     logger.info(
-        "Watchdog iniciado cada %s s — histórico auto=%s (timeout %s min, batch %s)",
+        "Watchdog iniciado cada %s s — histórico auto=%s (estancamiento %s min, timeout %s min, batch %s)",
         interval,
         historical_auto,
+        settings.control_stall_timeout_min,
         settings.control_exec_timeout_min,
         settings.n8n_batch_size,
     )

@@ -87,17 +87,16 @@ def decide_window(
             )
 
         if w_start in done_w and w_end not in done_w:
-            ns, ne = w_end, min(w_end + timedelta(days=1), end)
             return WindowPlan(
-                action="slide_window",
-                window_start=ns,
-                window_end=ne,
+                action="retry_same",
+                window_start=w_start,
+                window_end=w_end,
                 first_pending=D,
                 active_year=D.year,
                 active_month=D.month,
                 days_completed=days_done,
                 days_total=total_days,
-                message=f"Avance parcial; nueva ventana {ns}–{ne}",
+                message=f"Ventana {w_start}–{w_end}: primer día listo, continúa el segundo",
             )
 
         if w_start in done_w and w_end in done_w:

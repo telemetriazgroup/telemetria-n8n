@@ -230,13 +230,27 @@ def sync_n8n_execution_state(db: Session, state: ControlState) -> None:
     sync_n8n_execution_state_standalone(state)
 
 
-def batch_grace_seconds() -> int:
-    """Tiempo mínimo antes de asumir que n8n terminó un lote (no un fallo)."""
-    return max(
-        90,
-        settings.control_watchdog_interval_sec // 2,
-        settings.n8n_batch_size * 20,
-    )
+def stall_timeout_seconds() -> int:
+    return settings.control_stall_timeout_min * 60
+
+
+def window_last_progress_seconds(
+    db: Session, w_start: date, w_end: date, now: datetime
+) -> float | None:
+    """Segundos desde el último analyzed_at en la ventana de 2 días."""
+    latest: datetime | None = None
+    for day in days_in_window(w_start, w_end):
+        prog = fetch_day_progress(db, day)
+        analyzed_at = prog.get("analyzed_at")
+        if not analyzed_at:
+            continue
+        if analyzed_at.tzinfo is None:
+            analyzed_at = analyzed_at.replace(tzinfo=timezone.utc)
+        if latest is None or analyzed_at > latest:
+            latest = analyzed_at
+    if latest is None:
+        return None
+    return (now - latest).total_seconds()
 
 
 def day_needs_more_batches(prog: DayProgress | None) -> bool:
@@ -262,24 +276,27 @@ def n8n_workflow_idle() -> bool:
     return not _n8n.workflow_is_running()
 
 
-def continue_partial_window(
+def retry_stalled_window(
     db: Session,
     state: ControlState,
     active: ControlRun,
     *,
     ws: date,
     we: date,
-    target: date,
-    prog: DayProgress,
+    detail: str,
 ) -> str:
-    """Cierra el run del lote actual y lanza el siguiente sector sin marcar fallo."""
-    detail = day_progress_detail(target, prog)
+    """Reinicia la misma ventana de 2 días tras N minutos sin avance en BD."""
+    stall_min = settings.control_stall_timeout_min
+    stop_n8n_executions(state)
     finalize_run(
         db,
         active,
-        status="completed",
-        action="batch_partial",
-        note=f"Watchdog: lote parcial ({detail}); continúa siguiente sector",
+        status="failed",
+        action="retry_same",
+        note=(
+            f"Watchdog: {stall_min} min sin avance en ventana {ws}–{we} "
+            f"({detail}); reinicio del par"
+        ),
     )
     state.active_n8n_execution_id = None
     launch_window(
@@ -288,10 +305,16 @@ def continue_partial_window(
         ws,
         we,
         "retry_same",
-        f"Continuación barrido tras lote parcial ({detail})",
+        f"Reintento tras {stall_min} min sin avance ({detail})",
     )
-    logger.info("Watchdog: continuación tras lote parcial %s", detail)
-    return "batch_partial"
+    logger.info(
+        "Watchdog: reinicio ventana %s–%s tras %s min sin avance (%s)",
+        ws,
+        we,
+        stall_min,
+        detail,
+    )
+    return "stall_retry"
 
 
 def advance_window_after_success(db: Session, state: ControlState) -> None:
@@ -419,10 +442,10 @@ def try_launch_next(db: Session, state: ControlState) -> ControlRun | None:
 def evaluate_active_run(db: Session, state: ControlState) -> str | None:
     """
     Evalúa el run en curso (watchdog cada ~2 min). Devuelve:
-      'completed' — ventana OK en BD
-      'batch_partial' — lote de N correos cerrado; se lanzó el siguiente sector
-      'timeout'   — superó timeout; cancelado
-      'waiting'   — n8n en curso o entre lotes
+      'completed' — ventana de 2 días OK en BD
+      'stall_retry' — sin avance N min; reinició el mismo par
+      'timeout'   — superó timeout global; cancelado
+      'waiting'   — n8n en curso o bucle interno avanzando
       None        — no hay run activo
     """
     now = utcnow()
@@ -457,6 +480,8 @@ def evaluate_active_run(db: Session, state: ControlState) -> str | None:
 
     target = first_incomplete_day_in_window(ws, we, completed)
     prog = fetch_day_progress(db, target) if target else None
+    stall_sec = stall_timeout_seconds()
+    since_progress = window_last_progress_seconds(db, ws, we, now)
 
     if (
         target
@@ -467,18 +492,17 @@ def evaluate_active_run(db: Session, state: ControlState) -> str | None:
     ):
         return "waiting"
 
-    # n8n entre lotes (sector de N correos): el día sigue partial — continuar, no fallar
-    if (
-        not state.paused
-        and age >= batch_grace_seconds()
-        and n8n_workflow_idle()
-        and target
-        and prog
-        and day_needs_more_batches(prog)
-    ):
-        return continue_partial_window(
-            db, state, active, ws=ws, we=we, target=target, prog=prog
-        )
+    # Bucle interno n8n: no relanzar entre lotes de 5; solo si el par lleva ≥10 min sin avance.
+    if not state.paused and n8n_workflow_idle() and target and prog:
+        if since_progress is not None and since_progress < stall_sec:
+            return "waiting"
+        if since_progress is None and age < stall_sec:
+            return "waiting"
+        if day_needs_more_batches(prog) or int(prog["emails_processed_count"] or 0) == 0:
+            detail = day_progress_detail(target, prog)
+            return retry_stalled_window(
+                db, state, active, ws=ws, we=we, detail=detail
+            )
 
     if state.paused:
         return "waiting"

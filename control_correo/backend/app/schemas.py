@@ -37,6 +37,7 @@ class DashboardOut(BaseModel):
     program_history_end: date
     poll_interval_sec: int
     watchdog_interval_sec: int
+    stall_timeout_min: int = 10
     exec_timeout_min: int
     scheduler_enabled: bool
     historical_auto_sync_enabled: bool = False
