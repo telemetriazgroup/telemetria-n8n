@@ -47,6 +47,10 @@ def watchdog_tick() -> None:
                 logger.info("Watchdog: siguiente ventana tras completar")
             return
 
+        if result == "batch_partial":
+            logger.info("Watchdog: continuación de lote parcial ya lanzada")
+            return
+
         if result == "timeout":
             active = get_active_running_run(db)
             if not active:
