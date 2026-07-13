@@ -16,6 +16,28 @@ export async function postJson<T>(path: string, body?: unknown): Promise<T> {
   return r.json();
 }
 
+export async function putJson<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(`${API}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export type MatchConfig = {
+  telemetria_variants: string[];
+  person_keywords: string[];
+  updated_at: string | null;
+};
+
+export type ResetMailResult = {
+  ok: boolean;
+  cleared: Record<string, number>;
+  control_state_reset: boolean;
+};
+
 export type Dashboard = {
   days_completed: number;
   days_total: number;

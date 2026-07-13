@@ -15,6 +15,8 @@ COPY migrations/07-control-correo-range-2025.sql /app/migrations/07-control-corr
 COPY migrations/08-control-correo-run-actions.sql /app/migrations/08-control-correo-run-actions.sql
 COPY migrations/09-email-history-slot.sql /app/migrations/09-email-history-slot.sql
 COPY migrations/10-open-calendar.sql /app/migrations/10-open-calendar.sql
+COPY migrations/11-correos-procesados.sql /app/migrations/11-correos-procesados.sql
+COPY migrations/12-match-config.sql /app/migrations/12-match-config.sql
 
 COPY app ./app
 

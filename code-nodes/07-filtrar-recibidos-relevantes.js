@@ -28,7 +28,7 @@ const personKws = (Array.isArray(cfg.keywords) && cfg.keywords.length)
 
 const telemetriaVariants = Array.isArray(cfg.telemetriaVariants) && cfg.telemetriaVariants.length
   ? cfg.telemetriaVariants
-  : ['telemetria', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'];
+  : ['telemetria', 'telemetría', 'madurador', 'telemtria', 'telemetrai', 'ztrack', 'api', 'software', 'plataforma'];
 
 const HEADER_LABEL_BLOCKLIST = [
   /ztrack\s+telemetry/i,
@@ -172,20 +172,42 @@ function isSentByMonitor(fromAddress, labelIds) {
   return false;
 }
 
+function stripAccents(s) {
+  return String(s).normalize('NFD').replace(/\p{M}/gu, '');
+}
+
+function buildNormalizedHaystack(haystack) {
+  let normalized = '';
+  const map = [];
+  const src = String(haystack || '');
+  for (let i = 0; i < src.length; i += 1) {
+    const chunk = stripAccents(src[i]).toLowerCase();
+    for (let j = 0; j < chunk.length; j += 1) {
+      normalized += chunk[j];
+      map.push(i);
+    }
+  }
+  return { normalized, map, original: src };
+}
+
 function findStandaloneKeyword(haystack, keywords) {
+  const { normalized, map, original } = buildNormalizedHaystack(haystack);
   const candidates = [];
 
   for (const kw of keywords) {
-    const re = new RegExp(`\\b${escapeRe(kw)}\\b`, 'gi');
+    const normKw = stripAccents(String(kw)).toLowerCase().trim();
+    if (!normKw) continue;
+    const re = new RegExp(`\\b${escapeRe(normKw)}\\b`, 'gi');
     let m;
-    while ((m = re.exec(haystack)) !== null) {
-      const start = m.index;
-      const end = start + m[0].length;
-      if (isInvalidMatchContext(haystack, start, end)) continue;
+    while ((m = re.exec(normalized)) !== null) {
+      const start = map[m.index] ?? m.index;
+      const endIdx = m.index + m[0].length - 1;
+      const end = (map[endIdx] ?? endIdx) + 1;
+      if (isInvalidMatchContext(original, start, end)) continue;
       candidates.push({
         position: start,
-        matched: m[0],
-        keyword: kw
+        matched: original.slice(start, end),
+        keyword: kw,
       });
     }
   }

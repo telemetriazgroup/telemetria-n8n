@@ -142,3 +142,9 @@ def ensure_control_schema() -> None:
 
         _apply_sql_file(conn, "09-email-history-slot.sql")
         logger.debug("Tabla email_history_slot verificada")
+
+        _apply_sql_file(conn, "11-correos-procesados.sql")
+        logger.debug("Tabla correos_procesados verificada")
+
+        _apply_sql_file(conn, "12-match-config.sql")
+        logger.debug("Config match verificada")

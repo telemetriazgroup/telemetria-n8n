@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     n8n_webhook_live_path: str = "live-run"
     n8n_batch_size: int = 5
 
+    admin_reset_password: str = "Lpmp2018!"
+
     cors_origins: str = "http://localhost:7201,http://161.132.53.51:7201"
 
 

@@ -139,14 +139,12 @@ WHERE trace_status = 'active'
   AND email_date >= to_timestamp(${afterEpoch}) AT TIME ZONE 'America/Lima'
   AND email_date < to_timestamp(${beforeEpoch}) AT TIME ZONE 'America/Lima'
 UNION
-SELECT proc.elem
-FROM email_history_slot slot,
-     jsonb_array_elements_text(COALESCE(slot.message_ids_processed, '[]'::jsonb)) proc(elem)
-WHERE slot.analyzed_date = '${d}'::date AND slot.slot_index = ${idx}
+SELECT cp.message_id
+FROM correos_procesados cp
+WHERE cp.analyzed_date = '${d}'::date AND cp.slot_index = ${idx}
   AND NOT EXISTS (
-    SELECT 1
-    FROM jsonb_array_elements_text(COALESCE(slot.message_ids_match, '[]'::jsonb)) m(elem)
-    WHERE m.elem = proc.elem
+    SELECT 1 FROM email_trace et
+    WHERE et.message_id = cp.message_id AND et.trace_status = 'active'
   )
 `.trim();
 } else if (mode === 'historical') {
@@ -157,14 +155,12 @@ WHERE trace_status = 'active'
   AND review_mode = 'historical'
   AND (search_after::date = '${d}'::date OR email_date::date = '${d}'::date)
 UNION
-SELECT proc.elem
-FROM email_history_day ehd,
-     jsonb_array_elements_text(COALESCE(ehd.message_ids_processed, '[]'::jsonb)) proc(elem)
-WHERE ehd.analyzed_date = '${d}'::date
+SELECT cp.message_id
+FROM correos_procesados cp
+WHERE cp.analyzed_date = '${d}'::date
   AND NOT EXISTS (
-    SELECT 1
-    FROM jsonb_array_elements_text(COALESCE(ehd.message_ids_match, '[]'::jsonb)) m(elem)
-    WHERE m.elem = proc.elem
+    SELECT 1 FROM email_trace et
+    WHERE et.message_id = cp.message_id AND et.trace_status = 'active'
   )
 `.trim();
 } else if (mode === 'repair') {

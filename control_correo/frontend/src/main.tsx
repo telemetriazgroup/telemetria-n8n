@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
 import App from "./App";
+import SettingsPage from "./SettingsPage";
 import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -14,6 +15,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <NavLink to="/history">Días históricos</NavLink>
           <NavLink to="/trace">Correos match</NavLink>
           <NavLink to="/runs">Ejecuciones</NavLink>
+          <NavLink to="/settings">Configuración</NavLink>
         </nav>
         <main>
           <Routes>
@@ -21,6 +23,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="/history" element={<App page="history" />} />
             <Route path="/trace" element={<App page="trace" />} />
             <Route path="/runs" element={<App page="runs" />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </main>
       </div>

@@ -3,6 +3,8 @@ from typing import Any, Optional
 import httpx
 
 from app.config import settings
+from app.database import SessionLocal
+from app.services.match_config import match_payload_for_n8n
 
 
 class N8nClient:
@@ -142,6 +144,14 @@ class N8nClient:
         )
         return result
 
+    def _enrich_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        db = SessionLocal()
+        try:
+            payload.update(match_payload_for_n8n(db))
+        finally:
+            db.close()
+        return payload
+
     def trigger_historical(
         self,
         start_date: str,
@@ -161,7 +171,7 @@ class N8nClient:
         if slot_start_epoch is not None and slot_end_epoch is not None:
             payload["slotStartEpoch"] = slot_start_epoch
             payload["slotEndEpoch"] = slot_end_epoch
-        return self._trigger_webhook(settings.n8n_webhook_path, payload)
+        return self._trigger_webhook(settings.n8n_webhook_path, self._enrich_payload(payload))
 
     def trigger_repair(
         self,
@@ -179,7 +189,7 @@ class N8nClient:
             "tzOffsetHours": -5,
             "skipKnownInDb": False,
         }
-        return self._trigger_webhook(settings.n8n_webhook_path, payload)
+        return self._trigger_webhook(settings.n8n_webhook_path, self._enrich_payload(payload))
 
     def trigger_live_slot(
         self,
@@ -203,7 +213,7 @@ class N8nClient:
             "tzOffsetHours": -5,
             "reviewMode": "incremental",
         }
-        return self._trigger_webhook(settings.n8n_webhook_live_path, payload)
+        return self._trigger_webhook(settings.n8n_webhook_live_path, self._enrich_payload(payload))
 
     def _trigger_webhook(self, path_setting: str, payload: dict[str, Any]) -> Optional[str]:
         """Dispara workflow vía webhook (preferido) o API run."""

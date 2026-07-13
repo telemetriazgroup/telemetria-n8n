@@ -646,3 +646,75 @@ td {
 code {
   font-size: 0.85em;
 }
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.settings-grid .card {
+  max-width: none;
+}
+
+.settings-grid label {
+  display: block;
+  margin: 0.75rem 0;
+}
+
+.settings-grid textarea,
+.settings-grid input[type="password"] {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #2d3748;
+  background: #0f1419;
+  color: #e8eaed;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.settings-grid textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.card-danger {
+  border-color: #f85149;
+}
+
+.checkbox-row {
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.checkbox-row input {
+  width: auto;
+  margin: 0;
+}
+
+.error-banner {
+  background: rgba(248, 81, 73, 0.15);
+  border: 1px solid #f85149;
+  color: #ffb4af;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.ok-banner {
+  background: rgba(63, 185, 80, 0.12);
+  border: 1px solid #3fb950;
+  color: #7ee787;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.small {
+  font-size: 0.85rem;
+}

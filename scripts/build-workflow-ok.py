@@ -239,6 +239,8 @@ nodes = [
         'position': [2460, 780], 'credentials': GMAIL,
     },
     code_node('node-normalize', 'Normalizar correo', [2680, 780], '02-normalizar.js'),
+    code_node('node-save-proc-prep', 'Preparar correo procesado', [2790, 920], '05-guardar-correo-procesado.js', each_item=True),
+    pg_node('node-save-proc', 'Guardar correo procesado', [3010, 920], '={{ $json.upsertSql }}'),
     code_node('node-filter-relevant', 'Filtrar recibidos relevantes', [2900, 780], '07-filtrar-recibidos-relevantes.js'),
     if_bool('node-if-close-day', '¿Cerrar día sin matches?', [3120, 780],
             '={{ $json._cerrarDiaHistorico === true || $json._continuarSinMatch === true }}'),
@@ -330,7 +332,12 @@ connections = {
     ]},
     'Omitir si vacío': {'main': [[{'node': 'Leer Gmail', 'type': 'main', 'index': 0}]]},
     'Leer Gmail': {'main': [[{'node': 'Normalizar correo', 'type': 'main', 'index': 0}]]},
-    'Normalizar correo': {'main': [[{'node': 'Filtrar recibidos relevantes', 'type': 'main', 'index': 0}]]},
+    'Normalizar correo': {'main': [[
+        {'node': 'Preparar correo procesado', 'type': 'main', 'index': 0},
+        {'node': 'Filtrar recibidos relevantes', 'type': 'main', 'index': 0},
+    ]]},
+    'Preparar correo procesado': {'main': [[{'node': 'Guardar correo procesado', 'type': 'main', 'index': 0}]]},
+    'Guardar correo procesado': {'main': [[]]},
     'Filtrar recibidos relevantes': {'main': [[{'node': '¿Cerrar día sin matches?', 'type': 'main', 'index': 0}]]},
     '¿Cerrar día sin matches?': {'main': [
         [{'node': 'Pasar a registrar', 'type': 'main', 'index': 0}],
