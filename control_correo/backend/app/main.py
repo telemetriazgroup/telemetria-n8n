@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db_migrate import ensure_control_schema
-from app.routers import admin, dashboard, history, runs, schedule, trace
+from app.routers import admin, dashboard, history, processed, runs, schedule, trace
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +39,7 @@ app.include_router(admin.router)
 app.include_router(dashboard.router)
 app.include_router(history.router)
 app.include_router(trace.router)
+app.include_router(processed.router)
 app.include_router(schedule.router)
 app.include_router(runs.router)
 

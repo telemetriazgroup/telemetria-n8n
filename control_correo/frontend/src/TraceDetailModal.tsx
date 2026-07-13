@@ -1,15 +1,21 @@
 import { useEffect, useState } from "react";
 import EmailThreadView from "./EmailThreadView";
 import { renderTextWithMatchHighlights } from "./matchHighlight";
-import { TraceDetail, fetchJson } from "./api";
+import { TraceDetail, ProcessedDetail, fetchJson } from "./api";
 
 type Props = {
   messageId: string;
   onClose: () => void;
+  /** Ruta API relativa a /api/v1 (sin barra final). */
+  detailPath?: "trace" | "processed";
 };
 
-export default function TraceDetailModal({ messageId, onClose }: Props) {
-  const [detail, setDetail] = useState<TraceDetail | null>(null);
+export default function TraceDetailModal({
+  messageId,
+  onClose,
+  detailPath = "trace",
+}: Props) {
+  const [detail, setDetail] = useState<TraceDetail | ProcessedDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewRaw, setViewRaw] = useState(false);
 
@@ -17,7 +23,9 @@ export default function TraceDetailModal({ messageId, onClose }: Props) {
     let cancelled = false;
     setDetail(null);
     setError(null);
-    fetchJson<TraceDetail>(`/trace/${encodeURIComponent(messageId)}`)
+    fetchJson<TraceDetail | ProcessedDetail>(
+      `/${detailPath}/${encodeURIComponent(messageId)}`
+    )
       .then((d) => {
         if (!cancelled) setDetail(d);
       })
@@ -27,7 +35,7 @@ export default function TraceDetailModal({ messageId, onClose }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [messageId]);
+  }, [messageId, detailPath]);
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
@@ -62,6 +70,12 @@ export default function TraceDetailModal({ messageId, onClose }: Props) {
               <dd>{detail.match_telemetria_keyword ?? "—"}</dd>
               <dt>Match persona</dt>
               <dd>{detail.match_person_keyword ?? "—"}</dd>
+              {"is_match" in detail && (
+                <>
+                  <dt>Tipo</dt>
+                  <dd>{detail.is_match ? "Con match" : "Sin match"}</dd>
+                </>
+              )}
             </dl>
 
             {(detail.match_telemetria_excerpt || detail.match_person_excerpt) && (

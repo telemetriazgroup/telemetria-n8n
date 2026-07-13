@@ -7,6 +7,7 @@ import {
   N8nTestResult,
   RunRow,
   TraceRow,
+  ProcessedRow,
   actionLabel,
   addDays,
   datetimeLocalToIso,
@@ -21,12 +22,14 @@ import {
   yearDateRange,
 } from "./api";
 
-type Page = "dashboard" | "history" | "trace" | "runs";
+type Page = "dashboard" | "history" | "trace" | "processed" | "runs";
 
 export default function App({ page }: { page: Page }) {
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [days, setDays] = useState<HistoryDay[]>([]);
   const [traces, setTraces] = useState<TraceRow[]>([]);
+  const [processed, setProcessed] = useState<ProcessedRow[]>([]);
+  const [processedFilter, setProcessedFilter] = useState<"all" | "match" | "no_match">("all");
   const [runs, setRuns] = useState<RunRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -34,6 +37,7 @@ export default function App({ page }: { page: Page }) {
   const [historyMonth, setHistoryMonth] = useState<number>(0);
   const [historyFilter, setHistoryFilter] = useState<string>("all");
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [selectedDetailPath, setSelectedDetailPath] = useState<"trace" | "processed">("trace");
   const [traceRangeActive, setTraceRangeActive] = useState(false);
   const [traceFromDt, setTraceFromDt] = useState<string>("");
   const [traceToDt, setTraceToDt] = useState<string>("");
@@ -62,22 +66,35 @@ export default function App({ page }: { page: Page }) {
           : monthDateRange(historyYear, historyMonth);
       const from = raw.from < progStart ? progStart : raw.from;
       setDays(await fetchJson<HistoryDay[]>(`/history/plan?from=${from}&to=${raw.to}`));
-    } else if (page === "trace") {
-      if (traceRangeActive && traceFromDt && traceToDt) {
-        const fromDt = encodeURIComponent(datetimeLocalToIso(traceFromDt));
-        const toDt = encodeURIComponent(datetimeLocalToIso(traceToDt));
+    } else if (page === "trace" || page === "processed") {
+      const d = await fetchJson<Dashboard>("/dashboard");
+      setDash(d);
+      const rangeQuery =
+        traceRangeActive && traceFromDt && traceToDt
+          ? `&from_dt=${encodeURIComponent(datetimeLocalToIso(traceFromDt))}&to_dt=${encodeURIComponent(datetimeLocalToIso(traceToDt))}`
+          : "";
+      const pageSize = traceRangeActive ? 200 : 20;
+      if (page === "trace") {
         setTraces(
-          await fetchJson<TraceRow[]>(
-            `/trace?page_size=200&from_dt=${fromDt}&to_dt=${toDt}`
-          )
+          await fetchJson<TraceRow[]>(`/trace?page_size=${pageSize}${rangeQuery}`)
         );
       } else {
-        setTraces(await fetchJson<TraceRow[]>(`/trace?page_size=20`));
+        const matchQuery =
+          processedFilter === "match"
+            ? "&match_only=true"
+            : processedFilter === "no_match"
+              ? "&match_only=false"
+              : "";
+        setProcessed(
+          await fetchJson<ProcessedRow[]>(
+            `/processed?page_size=${pageSize}${rangeQuery}${matchQuery}`
+          )
+        );
       }
     } else {
       setRuns(await fetchJson<RunRow[]>("/runs?limit=100"));
     }
-  }, [page, historyYear, historyMonth, traceRangeActive, traceFromDt, traceToDt, manualStart]);
+  }, [page, historyYear, historyMonth, traceRangeActive, traceFromDt, traceToDt, processedFilter, manualStart]);
 
   useEffect(() => {
     load().catch((e) => setError(String(e)));
@@ -636,7 +653,10 @@ export default function App({ page }: { page: Page }) {
                     <button
                       type="button"
                       className="btn btn-ghost"
-                      onClick={() => setSelectedMessageId(t.message_id)}
+                      onClick={() => {
+                        setSelectedDetailPath("trace");
+                        setSelectedMessageId(t.message_id);
+                      }}
                     >
                       Ver contenido
                     </button>
@@ -649,6 +669,167 @@ export default function App({ page }: { page: Page }) {
         {selectedMessageId && (
           <TraceDetailModal
             messageId={selectedMessageId}
+            detailPath={selectedDetailPath}
+            onClose={() => setSelectedMessageId(null)}
+          />
+        )}
+      </section>
+    );
+  }
+
+  if (page === "processed") {
+    const applyTraceRange = () => {
+      if (!traceDraftFrom || !traceDraftTo) return;
+      setTraceFromDt(traceDraftFrom);
+      setTraceToDt(traceDraftTo);
+      setTraceRangeActive(true);
+    };
+
+    const clearTraceRange = () => {
+      setTraceRangeActive(false);
+      setTraceFromDt("");
+      setTraceToDt("");
+      setTraceDraftFrom("");
+      setTraceDraftTo("");
+    };
+
+    return (
+      <section>
+        <h1>Todos los correos</h1>
+        <p className="muted">
+          Correos leídos y guardados en la base de datos (con y sin match). Los que
+          coinciden con las palabras configuradas aparecen marcados como{" "}
+          <span className="badge-match">Match</span>.
+        </p>
+        <div className="card card-secondary trace-filters">
+          <h2>Filtros</h2>
+          <div className="toolbar toolbar-wrap">
+            <label>
+              Tipo{" "}
+              <select
+                value={processedFilter}
+                onChange={(e) =>
+                  setProcessedFilter(e.target.value as "all" | "match" | "no_match")
+                }
+              >
+                <option value="all">Todos</option>
+                <option value="match">Solo con match</option>
+                <option value="no_match">Solo sin match</option>
+              </select>
+            </label>
+            <label>
+              Desde{" "}
+              <input
+                type="datetime-local"
+                value={traceDraftFrom}
+                min="2025-01-01T00:00"
+                max={`${dash?.program_history_end ?? dash?.program_view_end ?? "2099-12-31"}T23:59`}
+                onChange={(e) => setTraceDraftFrom(e.target.value)}
+              />
+            </label>
+            <label>
+              Hasta{" "}
+              <input
+                type="datetime-local"
+                value={traceDraftTo}
+                min={traceDraftFrom || "2025-01-01T00:00"}
+                max={`${dash?.program_history_end ?? dash?.program_view_end ?? "2099-12-31"}T23:59`}
+                onChange={(e) => setTraceDraftTo(e.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!traceDraftFrom || !traceDraftTo}
+              onClick={applyTraceRange}
+            >
+              Aplicar rango
+            </button>
+            {traceRangeActive && (
+              <button type="button" className="btn btn-ghost" onClick={clearTraceRange}>
+                Ver últimos 20
+              </button>
+            )}
+          </div>
+          {traceRangeActive && traceFromDt && traceToDt && (
+            <p className="muted">
+              Rango activo: {formatDateTime(datetimeLocalToIso(traceFromDt))} →{" "}
+              {formatDateTime(datetimeLocalToIso(traceToDt))} · hasta 200 resultados
+            </p>
+          )}
+        </div>
+        <p className="muted">
+          {traceRangeActive
+            ? `Mostrando ${processed.length} correo(s) en el rango`
+            : `Mostrando los últimos ${processed.length} correo(s)`}
+        </p>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha / hora</th>
+                <th>Asunto</th>
+                <th>Fragmento</th>
+                <th>De</th>
+                <th>Match</th>
+                <th>Modo</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {processed.map((p) => (
+                <tr key={p.message_id} className={p.is_match ? "row-match" : undefined}>
+                  <td>{formatDateTime(p.email_date)}</td>
+                  <td className="match-cell">
+                    {p.is_match
+                      ? renderSubjectWithMatch(p.subject, {
+                          telemetriaKeyword: p.match_telemetria_keyword,
+                          personKeyword: p.match_person_keyword,
+                          telemetriaExcerpt: p.match_telemetria_excerpt,
+                          personExcerpt: p.match_person_excerpt,
+                        })
+                      : (p.subject ?? "—")}
+                  </td>
+                  <td className="match-cell match-cell-preview">
+                    {p.is_match
+                      ? renderCompactMatchPreview({
+                          telemetriaKeyword: p.match_telemetria_keyword,
+                          personKeyword: p.match_person_keyword,
+                          telemetriaExcerpt: p.match_telemetria_excerpt,
+                          personExcerpt: p.match_person_excerpt,
+                        })
+                      : (p.snippet?.slice(0, 120) ?? "—")}
+                  </td>
+                  <td>{p.from_address ?? "—"}</td>
+                  <td>
+                    {p.is_match ? (
+                      <span className="badge-match">Match</span>
+                    ) : (
+                      <span className="badge-muted">—</span>
+                    )}
+                  </td>
+                  <td>{p.review_mode ?? "—"}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => {
+                        setSelectedDetailPath("processed");
+                        setSelectedMessageId(p.message_id);
+                      }}
+                    >
+                      Ver contenido
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {selectedMessageId && (
+          <TraceDetailModal
+            messageId={selectedMessageId}
+            detailPath={selectedDetailPath}
             onClose={() => setSelectedMessageId(null)}
           />
         )}

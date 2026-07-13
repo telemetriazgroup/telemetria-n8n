@@ -224,6 +224,10 @@ for (const item of $input.all()) {
       search_after:    qinfo.afterIso,
       search_before:   qinfo.beforeIso,
       review_mode:     qinfo.reviewMode,
+      analyzed_date:   qinfo.processDate || null,
+      slot_index:      qinfo.slotIndex !== undefined && qinfo.slotIndex !== null
+        ? Number(qinfo.slotIndex)
+        : null,
       label_ids:       Array.isArray(m.labelIds) ? m.labelIds : [],
       attachments
     }

@@ -1,4 +1,5 @@
 // ── Upsert correos_procesados (todos los correos leídos, no solo match) ─────
+// Modo: Run Once for All Items (lee todos los correos normalizados del lote).
 
 function pgStr(v) {
   if (v === null || v === undefined) return 'NULL';
@@ -25,7 +26,7 @@ function getCfg() {
   return {};
 }
 
-function qinfoForMessage() {
+function qinfoForBatch() {
   try {
     const j = $('Construir consulta Gmail').first()?.json;
     if (j) return j;
@@ -34,43 +35,51 @@ function qinfoForMessage() {
 }
 
 const cfg = getCfg();
-const qinfo = qinfoForMessage();
-const src = $input.item?.json || $input.first()?.json || {};
+const qinfo = qinfoForBatch();
+const out = [];
 
-if (!src.message_id) {
-  return [];
-}
+for (const item of $input.all()) {
+  const src = item.json || {};
+  if (!src.message_id) continue;
 
-const analyzedDate =
-  String(cfg.processDate || qinfo.processDate || src.analyzed_date || '').slice(0, 10) || null;
-const slotIndex =
-  cfg.slotIndex !== undefined && cfg.slotIndex !== null
-    ? Number(cfg.slotIndex)
-    : qinfo.slotIndex !== undefined && qinfo.slotIndex !== null
-      ? Number(qinfo.slotIndex)
-      : null;
+  const analyzedDate =
+    String(
+      src.analyzed_date ||
+        cfg.processDate ||
+        qinfo.processDate ||
+        ''
+    ).slice(0, 10) || null;
 
-const row = {
-  message_id: src.message_id,
-  thread_id: src.thread_id || src.message_id,
-  from_address: src.from_address || null,
-  to_addresses: src.to_addresses || null,
-  cc_addresses: src.cc_addresses || null,
-  subject: src.subject || null,
-  email_date: src.email_date || null,
-  body_text: src.body_text || null,
-  snippet: src.snippet || null,
-  has_attachments: Boolean(src.has_attachments),
-  gmail_link: src.gmail_link || null,
-  search_query: src.search_query || qinfo.gmailQuery || null,
-  search_after: src.search_after || qinfo.afterIso || null,
-  search_before: src.search_before || qinfo.beforeIso || null,
-  review_mode: src.review_mode || qinfo.reviewMode || cfg.mode || null,
-  analyzed_date: analyzedDate,
-  slot_index: Number.isFinite(slotIndex) ? slotIndex : null,
-};
+  const slotRaw =
+    src.slot_index !== undefined && src.slot_index !== null
+      ? Number(src.slot_index)
+      : cfg.slotIndex !== undefined && cfg.slotIndex !== null
+        ? Number(cfg.slotIndex)
+        : qinfo.slotIndex !== undefined && qinfo.slotIndex !== null
+          ? Number(qinfo.slotIndex)
+          : null;
 
-const upsertSql = `
+  const row = {
+    message_id: src.message_id,
+    thread_id: src.thread_id || src.message_id,
+    from_address: src.from_address || null,
+    to_addresses: src.to_addresses || null,
+    cc_addresses: src.cc_addresses || null,
+    subject: src.subject || null,
+    email_date: src.email_date || null,
+    body_text: src.body_text || null,
+    snippet: src.snippet || null,
+    has_attachments: Boolean(src.has_attachments),
+    gmail_link: src.gmail_link || null,
+    search_query: src.search_query || qinfo.gmailQuery || null,
+    search_after: src.search_after || qinfo.afterIso || null,
+    search_before: src.search_before || qinfo.beforeIso || null,
+    review_mode: src.review_mode || qinfo.reviewMode || cfg.mode || null,
+    analyzed_date: analyzedDate,
+    slot_index: Number.isFinite(slotRaw) ? slotRaw : null,
+  };
+
+  const upsertSql = `
 INSERT INTO correos_procesados (
   message_id, thread_id, from_address, to_addresses, cc_addresses,
   subject, email_date, body_text, snippet, has_attachments, gmail_link,
@@ -117,4 +126,7 @@ ON CONFLICT (message_id) DO UPDATE SET
 RETURNING message_id;
 `.trim();
 
-return [{ json: { ...src, upsertSql } }];
+  out.push({ json: { ...src, upsertSql } });
+}
+
+return out;

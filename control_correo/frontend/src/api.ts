@@ -174,6 +174,35 @@ export type TraceDetail = TraceRow & {
   attachments: TraceAttachment[];
 };
 
+export type ProcessedRow = {
+  message_id: string;
+  thread_id?: string;
+  subject: string | null;
+  from_address: string | null;
+  email_date: string | null;
+  snippet?: string | null;
+  gmail_link: string | null;
+  processed_at?: string | null;
+  analyzed_date?: string | null;
+  review_mode?: string | null;
+  is_match: boolean;
+  match_telemetria_keyword?: string | null;
+  match_person_keyword?: string | null;
+  match_telemetria_excerpt?: string | null;
+  match_person_excerpt?: string | null;
+};
+
+export type ProcessedDetail = ProcessedRow & {
+  to_addresses: string | null;
+  cc_addresses: string | null;
+  body_text: string | null;
+  search_query: string | null;
+  search_after?: string | null;
+  search_before?: string | null;
+  has_attachments: boolean;
+  attachments: TraceAttachment[];
+};
+
 export type RunRow = {
   id: number;
   started_at: string;

@@ -147,6 +147,35 @@ class TraceDetailOut(TraceOut):
     attachments: list[dict]
 
 
+class ProcessedOut(BaseModel):
+    message_id: str
+    thread_id: str
+    subject: Optional[str]
+    from_address: Optional[str]
+    email_date: Optional[datetime]
+    snippet: Optional[str] = None
+    gmail_link: Optional[str]
+    processed_at: Optional[datetime] = None
+    analyzed_date: Optional[date] = None
+    review_mode: Optional[str] = None
+    is_match: bool = False
+    match_telemetria_keyword: Optional[str] = None
+    match_person_keyword: Optional[str] = None
+    match_telemetria_excerpt: Optional[str] = None
+    match_person_excerpt: Optional[str] = None
+
+
+class ProcessedDetailOut(ProcessedOut):
+    to_addresses: Optional[str]
+    cc_addresses: Optional[str]
+    body_text: Optional[str]
+    search_query: Optional[str]
+    search_after: Optional[datetime] = None
+    search_before: Optional[datetime] = None
+    has_attachments: bool = False
+    attachments: list[dict] = []
+
+
 class ScheduleMonthOut(BaseModel):
     year: int
     month: int

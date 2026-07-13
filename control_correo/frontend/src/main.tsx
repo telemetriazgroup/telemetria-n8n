@@ -14,6 +14,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <NavLink to="/" end>Dashboard</NavLink>
           <NavLink to="/history">Días históricos</NavLink>
           <NavLink to="/trace">Correos match</NavLink>
+          <NavLink to="/processed">Todos los correos</NavLink>
           <NavLink to="/runs">Ejecuciones</NavLink>
           <NavLink to="/settings">Configuración</NavLink>
         </nav>
@@ -22,6 +23,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="/" element={<App page="dashboard" />} />
             <Route path="/history" element={<App page="history" />} />
             <Route path="/trace" element={<App page="trace" />} />
+            <Route path="/processed" element={<App page="processed" />} />
             <Route path="/runs" element={<App page="runs" />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>

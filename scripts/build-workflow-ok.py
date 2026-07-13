@@ -239,7 +239,7 @@ nodes = [
         'position': [2460, 780], 'credentials': GMAIL,
     },
     code_node('node-normalize', 'Normalizar correo', [2680, 780], '02-normalizar.js'),
-    code_node('node-save-proc-prep', 'Preparar correo procesado', [2790, 920], '05-guardar-correo-procesado.js', each_item=True),
+    code_node('node-save-proc-prep', 'Preparar correo procesado', [2790, 920], '05-guardar-correo-procesado.js'),
     pg_node('node-save-proc', 'Guardar correo procesado', [3010, 920], '={{ $json.upsertSql }}'),
     code_node('node-filter-relevant', 'Filtrar recibidos relevantes', [2900, 780], '07-filtrar-recibidos-relevantes.js'),
     if_bool('node-if-close-day', '¿Cerrar día sin matches?', [3120, 780],

@@ -718,3 +718,23 @@ code {
 .small {
   font-size: 0.85rem;
 }
+
+.badge-match {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(63, 185, 80, 0.18);
+  color: #7ee787;
+  border: 1px solid #3fb950;
+}
+
+.badge-muted {
+  color: #6e7681;
+  font-size: 0.85rem;
+}
+
+.row-match {
+  background: rgba(63, 185, 80, 0.04);
+}
