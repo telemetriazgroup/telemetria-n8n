@@ -14,6 +14,7 @@ from app.database import (
 from app.services.dates import today_lima
 from app.services.live_planner import live_day_summary, next_live_slot
 from app.services.n8n_client import N8nClient
+from app.services.sync_manager import get_active_live_run, historical_blocks_live
 
 logger = logging.getLogger(__name__)
 _n8n = N8nClient()
@@ -21,20 +22,6 @@ _n8n = N8nClient()
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _live_run_active(db: Session) -> bool:
-    row = db.execute(
-        text(
-            """
-            SELECT id FROM control_run
-            WHERE status = 'running'
-              AND note ILIKE '%live_today%'
-            LIMIT 1
-            """
-        )
-    ).first()
-    return row is not None
 
 
 def _handle_day_rollover(db: Session, state) -> None:
@@ -72,10 +59,13 @@ def live_tick(db: Session) -> str | None:
         {"ts": _utcnow()},
     )
 
-    if _live_run_active(db):
+    if get_active_live_run(db):
         return "live run en curso"
 
-    # Live corre independiente de control_state.paused (histórico manual).
+    blocked, reason = historical_blocks_live(db)
+    if blocked:
+        logger.info("Live suspendido: %s", reason)
+        return f"live suspendido: {reason}"
 
     slot = next_live_slot(db)
     if not slot:

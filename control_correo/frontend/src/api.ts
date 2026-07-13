@@ -144,6 +144,8 @@ export type LiveToday = {
   emails_listed: number;
   emails_match: number;
   last_poll_at: string | null;
+  suspended?: boolean;
+  suspend_reason?: string | null;
   slots: LiveSlot[];
 };
 

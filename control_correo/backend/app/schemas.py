@@ -69,6 +69,8 @@ class LiveTodayOut(BaseModel):
     emails_listed: int
     emails_match: int
     last_poll_at: Optional[datetime] = None
+    suspended: bool = False
+    suspend_reason: Optional[str] = None
     slots: list[LiveSlotOut] = []
 
 

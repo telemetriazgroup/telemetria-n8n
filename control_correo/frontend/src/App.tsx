@@ -186,8 +186,13 @@ export default function App({ page }: { page: Page }) {
             <p className="muted">
               Ciclo cada {Math.round(dash.live_today.interval_sec / 60)} min · franjas de{" "}
               {dash.live_today.slot_minutes} min (America/Lima). Al cambiar el día, se archiva
-              en histórico.
+              en histórico. Se suspende automáticamente mientras corre el barrido histórico.
             </p>
+            {dash.live_today.suspended && (
+              <p className="status-warn">
+                Live suspendido: {dash.live_today.suspend_reason ?? "barrido histórico en curso"}
+              </p>
+            )}
             <div className="progress progress-live">
               <div style={{ width: `${dash.live_today.percent}%` }} />
             </div>

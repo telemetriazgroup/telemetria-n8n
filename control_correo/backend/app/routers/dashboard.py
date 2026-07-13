@@ -25,7 +25,10 @@ from app.services.dates import today_lima, yesterday_lima
 from app.services.live_planner import build_live_slot_views, live_day_summary
 from app.services.n8n_client import N8nClient
 from app.services.planner import decide_window
-from app.services.sync_manager import get_active_running_run
+from app.services.sync_manager import (
+    get_active_running_run,
+    historical_blocks_live,
+)
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
 _n8n = N8nClient()
@@ -81,6 +84,7 @@ def dashboard(db: Session = Depends(get_db)) -> DashboardOut:
 
     today = today_lima()
     live_summary = live_day_summary(db, today)
+    live_suspended, live_suspend_reason = historical_blocks_live(db)
     live_slots = [
         LiveSlotOut(**view)
         for view in build_live_slot_views(db, today)
@@ -138,6 +142,8 @@ def dashboard(db: Session = Depends(get_db)) -> DashboardOut:
             emails_listed=live_summary["emails_listed"],
             emails_match=live_summary["emails_match"],
             last_poll_at=state.live_last_poll_at,
+            suspended=live_suspended,
+            suspend_reason=live_suspend_reason or None,
             slots=live_slots,
         ),
         historical_auto_sync_enabled=state.historical_auto_sync_enabled,
@@ -149,6 +155,7 @@ def live_today_status(db: Session = Depends(get_db)) -> LiveTodayOut:
     state = get_or_create_state(db)
     today = today_lima()
     summary = live_day_summary(db, today)
+    live_suspended, live_suspend_reason = historical_blocks_live(db)
     slots = [LiveSlotOut(**view) for view in build_live_slot_views(db, today)]
     return LiveTodayOut(
         enabled=settings.live_today_enabled,
@@ -165,5 +172,7 @@ def live_today_status(db: Session = Depends(get_db)) -> LiveTodayOut:
         emails_listed=summary["emails_listed"],
         emails_match=summary["emails_match"],
         last_poll_at=state.live_last_poll_at,
+        suspended=live_suspended,
+        suspend_reason=live_suspend_reason or None,
         slots=slots,
     )

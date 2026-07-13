@@ -92,6 +92,42 @@ def get_active_running_run(db: Session) -> ControlRun | None:
     )
 
 
+def get_active_live_run(db: Session) -> ControlRun | None:
+    """Run live_today en curso."""
+    return (
+        db.query(ControlRun)
+        .filter(ControlRun.status == "running")
+        .filter(ControlRun.note.ilike("%live_today%"))
+        .order_by(ControlRun.started_at.desc())
+        .first()
+    )
+
+
+def historical_blocks_live(db: Session) -> tuple[bool, str]:
+    """True si el barrido histórico debe impedir lanzar franjas live."""
+    hist = get_active_running_run(db)
+    if hist:
+        return True, f"Barrido histórico en curso (run #{hist.id})"
+    live = get_active_live_run(db)
+    if _n8n.monitor_configured() and _n8n.workflow_is_running() and not live:
+        return True, "n8n ocupado con barrido histórico"
+    return False, ""
+
+
+def live_blocks_historical(db: Session) -> tuple[bool, str]:
+    """True si el seguimiento live debe impedir lanzar histórico."""
+    live = get_active_live_run(db)
+    if live:
+        return True, f"Seguimiento live en curso (run #{live.id})"
+    if (
+        _n8n.monitor_configured()
+        and _n8n.workflow_is_running()
+        and not get_active_running_run(db)
+    ):
+        return True, "n8n ocupado (live u otra ejecución)"
+    return False, ""
+
+
 def close_duplicate_running_runs(db: Session, keep: ControlRun | None) -> int:
     """Cierra runs «running» duplicados; deja solo `keep`."""
     running = (
@@ -221,6 +257,11 @@ def launch_window(
     action: str,
     note: str,
 ) -> ControlRun | None:
+    blocked, reason = live_blocks_historical(db)
+    if blocked:
+        logger.info("Launch histórico omitido: %s", reason)
+        return None
+
     if get_active_running_run(db):
         logger.info("Launch omitido: ya hay una sync en curso")
         return None
